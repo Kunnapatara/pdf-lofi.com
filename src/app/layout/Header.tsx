@@ -81,7 +81,7 @@ export const Header: React.FC<HeaderProps> = ({
 
               <span
                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/70"
-                title="Supported PDF operations run 100% on your device without server upload"
+                title="Supported local PDF tools process your document directly in your browser without uploading PDF files"
               >
                 <ShieldCheck className="w-3 h-3 text-emerald-600" />
                 LOCAL — Processing on this device
@@ -106,7 +106,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             <p className="text-xs text-stone-500">
-              A local-first PDF tool platform. Supported operations run in your browser without cloud document uploads.
+              A local-first PDF tool platform. Supported local PDF tools process your document directly in your browser.
             </p>
           </div>
 

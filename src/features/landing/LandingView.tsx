@@ -46,11 +46,11 @@ interface LandingViewProps {
   onOpenRecentDocument?: (doc: LocalDocument) => void;
 }
 
-type HomeCategoryFilter = 'all' | 'popular' | ToolCategory;
+type HomeCategoryFilter = 'all' | 'available' | ToolCategory;
 
 const CATEGORY_TABS: { id: HomeCategoryFilter; label: string }[] = [
   { id: 'all', label: 'All Tools' },
-  { id: 'popular', label: 'Popular & Ready' },
+  { id: 'available', label: 'Available Now' },
   { id: 'organize', label: 'Organize' },
   { id: 'intelligence', label: 'Intelligence' },
   { id: 'optimize', label: 'Optimize' },
@@ -68,7 +68,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
   recentDocuments = [],
   onOpenRecentDocument,
 }) => {
-  const [selectedCategory, setSelectedCategory] = useState<HomeCategoryFilter>('popular');
+  const [selectedCategory, setSelectedCategory] = useState<HomeCategoryFilter>('available');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
   const { isPro, entitlements } = useEntitlements();
@@ -80,8 +80,8 @@ export const LandingView: React.FC<LandingViewProps> = ({
       let matchesCategory = true;
       if (selectedCategory === 'all') {
         matchesCategory = true;
-      } else if (selectedCategory === 'popular') {
-        matchesCategory = tool.status === 'available' || tool.badge === 'Popular' || tool.badge === 'Core Tool';
+      } else if (selectedCategory === 'available') {
+        matchesCategory = tool.status === 'available';
       } else {
         matchesCategory = tool.category === selectedCategory;
       }
@@ -116,7 +116,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
   };
 
   const handleToolClick = (tool: CanonicalPdfTool) => {
-    if (tool.status !== 'available') return;
+    if (tool.status !== 'available' || !tool.routeView) return;
     onSelectTool(tool.routeView);
   };
 
@@ -136,7 +136,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
             </h1>
 
             <p className="text-xs sm:text-sm text-stone-600 leading-relaxed">
-              PDF operations run directly on your device. Zero document uploads, no remote file servers, and instant execution powered by Web Workers and client-side binary engines.
+              Supported local PDF tools process your document directly in your browser. PDF files are not uploaded for these operations. Instant execution is powered by Web Workers and client-side binary engines.
             </p>
           </div>
 
@@ -145,17 +145,17 @@ export const LandingView: React.FC<LandingViewProps> = ({
             <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 text-center space-y-1">
               <div className="text-xs font-bold text-emerald-700 flex items-center justify-center gap-1">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>100% In-Browser</span>
+                <span>In-Browser Processing</span>
               </div>
-              <div className="text-[11px] text-stone-500">Document bytes stay local</div>
+              <div className="text-[11px] text-stone-500">Supported PDF tools run locally</div>
             </div>
 
             <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 text-center space-y-1">
               <div className="text-xs font-bold text-stone-800 flex items-center justify-center gap-1">
                 <HardDrive className="w-3.5 h-3.5 text-stone-500" />
-                <span>Zero Server Uploads</span>
+                <span>No PDF File Uploads</span>
               </div>
-              <div className="text-[11px] text-stone-500">Safe for private files</div>
+              <div className="text-[11px] text-stone-500">Documents remain on this device</div>
             </div>
           </div>
         </div>
@@ -336,21 +336,21 @@ export const LandingView: React.FC<LandingViewProps> = ({
             <div className="flex items-center gap-2">
               <HardDrive className="w-4 h-4 text-emerald-700" />
               <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-900">
-                Processed 100% on Your Device
+                Processed Locally on Your Device
               </h3>
             </div>
             <ul className="space-y-2 text-xs text-stone-600">
               <li className="flex items-start gap-2">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                <span><strong>PDF Binary Bytes:</strong> Loaded and parsed in browser memory via pdf-lib and PDF.js.</span>
+                <span><strong>PDF Binary Bytes:</strong> Loaded and parsed directly in browser memory via pdf-lib and PDF.js.</span>
               </li>
               <li className="flex items-start gap-2">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                <span><strong>Document Rebuilding:</strong> Page rotations, merges, splits, and deletions execute locally.</span>
+                <span><strong>Supported PDF Operations:</strong> Page rotations, merges, splits, and deletions execute locally in your browser.</span>
               </li>
               <li className="flex items-start gap-2">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                <span><strong>Document Storage:</strong> Cached strictly in device IndexedDB for instant reload.</span>
+                <span><strong>Local Document & Cache State:</strong> Cached in browser IndexedDB on your device for fast session access.</span>
               </li>
             </ul>
           </div>
@@ -360,21 +360,21 @@ export const LandingView: React.FC<LandingViewProps> = ({
             <div className="flex items-center gap-2">
               <Cloud className="w-4 h-4 text-stone-700" />
               <h3 className="text-xs font-bold uppercase tracking-wider text-stone-900">
-                Managed on Server (No File Access)
+                Managed on Server (No PDF Document Access)
               </h3>
             </div>
             <ul className="space-y-2 text-xs text-stone-600">
               <li className="flex items-start gap-2">
                 <Lock className="w-3.5 h-3.5 text-stone-500 shrink-0 mt-0.5" />
-                <span><strong>Account & Authentication:</strong> Secure server-side sessions and credentials.</span>
+                <span><strong>Account & Authentication:</strong> Server-side user authentication and secure session tokens.</span>
               </li>
               <li className="flex items-start gap-2">
                 <Lock className="w-3.5 h-3.5 text-stone-500 shrink-0 mt-0.5" />
-                <span><strong>Subscription & Entitlements:</strong> Authoritative Lemon Squeezy tier checks.</span>
+                <span><strong>Subscription & Entitlements:</strong> Authoritative Lemon Squeezy tier checks and usage limits where applicable.</span>
               </li>
               <li className="flex items-start gap-2">
                 <Lock className="w-3.5 h-3.5 text-stone-500 shrink-0 mt-0.5" />
-                <span><strong>Strict Separation:</strong> The server never receives, reads, or stores your PDF files.</span>
+                <span><strong>Document Privacy Boundary:</strong> Supported local PDF tools process your document directly in your browser. PDF files are not uploaded for these operations.</span>
               </li>
             </ul>
           </div>

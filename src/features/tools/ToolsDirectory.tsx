@@ -95,7 +95,7 @@ export const ToolsDirectory: React.FC<ToolsDirectoryProps> = ({
               </span>
             </div>
             <p className="text-xs sm:text-sm text-stone-500 max-w-xl">
-              Canonical directory of all in-browser PDF utilities. Supported operations execute on your device with local-first privacy.
+              Canonical directory of all in-browser PDF utilities. Supported local PDF tools process your document directly in your browser.
             </p>
           </div>
 
@@ -214,7 +214,7 @@ export const ToolsDirectory: React.FC<ToolsDirectoryProps> = ({
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>
-            <strong>Local Processing Policy:</strong> All available tools process PDF documents directly inside your browser sandbox. File bytes never leave your device.
+            <strong>Local Processing Policy:</strong> Supported local PDF tools process your document directly in your browser. PDF files are not uploaded for these operations.
           </span>
         </div>
         {!hasDocument && (

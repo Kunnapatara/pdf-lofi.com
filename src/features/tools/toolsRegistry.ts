@@ -45,7 +45,7 @@ export interface CanonicalPdfTool {
   category: ToolCategory;
   status: ToolStatus;
   processingLocation: 'local';
-  routeView: AppView;
+  routeView?: AppView;
   workspaceTab?: ActiveTab;
   badge?: string;
   requiresPro?: boolean;
@@ -62,7 +62,6 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     status: 'available',
     processingLocation: 'local',
     routeView: 'merge',
-    badge: 'Popular',
     keywords: ['merge', 'combine', 'join', 'append', 'bind', 'collate', 'batch'],
   },
   {
@@ -73,7 +72,6 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     status: 'available',
     processingLocation: 'local',
     routeView: 'split',
-    badge: 'Popular',
     keywords: ['split', 'extract', 'range', 'cut', 'separate', 'pages'],
   },
   {
@@ -85,7 +83,6 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     processingLocation: 'local',
     routeView: 'organize',
     workspaceTab: 'organize',
-    badge: 'Core Tool',
     keywords: ['organize', 'reorder', 'sort', 'pages', 'manager', 'layout', 'grid'],
   },
   {
@@ -154,7 +151,6 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     category: 'optimize',
     status: 'coming_soon',
     processingLocation: 'local',
-    routeView: 'compress',
     keywords: ['compress', 'reduce size', 'optimize', 'shrink', 'smaller'],
   },
 
@@ -166,7 +162,6 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     category: 'convert',
     status: 'coming_soon',
     processingLocation: 'local',
-    routeView: 'convert',
     keywords: ['convert', 'image', 'png', 'jpg', 'raster', 'export images'],
   },
 
@@ -178,7 +173,6 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     category: 'security',
     status: 'coming_soon',
     processingLocation: 'local',
-    routeView: 'tools',
     keywords: ['protect', 'password', 'encrypt', 'lock', 'security'],
   },
 
@@ -190,7 +184,6 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     category: 'edit',
     status: 'coming_soon',
     processingLocation: 'local',
-    routeView: 'tools',
     keywords: ['numbers', 'pagination', 'header', 'footer', 'stamp'],
   },
 
@@ -202,7 +195,6 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     category: 'intelligence',
     status: 'coming_soon',
     processingLocation: 'local',
-    routeView: 'tools',
     keywords: ['ocr', 'scanned', 'text recognition', 'tesseract', 'extract text'],
   },
 ];
