@@ -1,17 +1,40 @@
+/**
+ * Rebuilt PDF-LoFi Home View
+ * Replaces marketing hero with a serious, authentic local-first PDF tool platform entry point.
+ *
+ * Core Functional Capabilities:
+ * 1. Product entry point (Local-first processing banner + quick dropzone)
+ * 2. Primary tool discovery directory (Clean category filter + canonical tool cards)
+ * 3. Clear explanation of local-first privacy (What stays local vs server-side)
+ * 4. Direct routing layer into working tools (Merge, Split, Organize, Viewer)
+ * 5. Transparent Free vs Pro product boundaries
+ * 6. Quick access to in-browser recent documents (IndexedDB)
+ */
+
 import React, { useState, useMemo } from 'react';
 import {
   Upload,
   FileText,
   ShieldCheck,
   Sparkles,
-  CheckCircle2,
-  HardDrive,
   Clock,
   ArrowRight,
+  HardDrive,
+  Cloud,
+  CheckCircle2,
+  Lock,
+  Search,
+  ExternalLink,
 } from 'lucide-react';
-import { AppView, ToolCategory, LocalDocument, ToolItem } from '../../types/pdf';
+import { AppView, LocalDocument } from '../../types/pdf';
 import { ToolCard } from '../../components/cards/ToolCard';
-import { ALL_TOOLS } from '../tools/toolsData';
+import {
+  CANONICAL_TOOLS,
+  CanonicalPdfTool,
+  ToolCategory,
+  AVAILABLE_TOOLS,
+} from '../tools/toolsRegistry';
+import { useEntitlements } from '../../services/entitlementService';
 
 interface LandingViewProps {
   onOpenPdf: () => void;
@@ -23,17 +46,17 @@ interface LandingViewProps {
   onOpenRecentDocument?: (doc: LocalDocument) => void;
 }
 
-type FilterCategory = 'all' | 'workflows' | 'organize' | 'optimize' | 'convert' | 'edit' | 'security' | 'intelligence';
+type HomeCategoryFilter = 'all' | 'popular' | ToolCategory;
 
-const CATEGORY_PILLS: { id: FilterCategory; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'workflows', label: 'Workflows' },
+const CATEGORY_TABS: { id: HomeCategoryFilter; label: string }[] = [
+  { id: 'all', label: 'All Tools' },
+  { id: 'popular', label: 'Popular & Ready' },
   { id: 'organize', label: 'Organize' },
+  { id: 'intelligence', label: 'Intelligence' },
   { id: 'optimize', label: 'Optimize' },
   { id: 'convert', label: 'Convert' },
   { id: 'edit', label: 'Edit' },
   { id: 'security', label: 'Security' },
-  { id: 'intelligence', label: 'Intelligence' },
 ];
 
 export const LandingView: React.FC<LandingViewProps> = ({
@@ -45,21 +68,34 @@ export const LandingView: React.FC<LandingViewProps> = ({
   recentDocuments = [],
   onOpenRecentDocument,
 }) => {
-  const [selectedCategory, setSelectedCategory] = useState<FilterCategory>('all');
+  const [selectedCategory, setSelectedCategory] = useState<HomeCategoryFilter>('popular');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
+  const { isPro, entitlements } = useEntitlements();
 
-  const displayedTools = useMemo(() => {
-    if (selectedCategory === 'all') {
-      return ALL_TOOLS;
-    }
-    if (selectedCategory === 'workflows') {
-      // High-priority ready workflows
-      return ALL_TOOLS.filter((t) =>
-        ['merge-pdf', 'split-pdf', 'organize-pdf', 'viewer-search'].includes(t.id)
-      );
-    }
-    return ALL_TOOLS.filter((t) => t.category === selectedCategory);
-  }, [selectedCategory]);
+  // Filter tools based on search and category
+  const filteredTools = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return CANONICAL_TOOLS.filter((tool) => {
+      let matchesCategory = true;
+      if (selectedCategory === 'all') {
+        matchesCategory = true;
+      } else if (selectedCategory === 'popular') {
+        matchesCategory = tool.status === 'available' || tool.badge === 'Popular' || tool.badge === 'Core Tool';
+      } else {
+        matchesCategory = tool.category === selectedCategory;
+      }
+
+      const matchesSearch =
+        q === '' ||
+        tool.name.toLowerCase().includes(q) ||
+        tool.shortDescription.toLowerCase().includes(q) ||
+        tool.category.toLowerCase().includes(q) ||
+        tool.keywords.some((kw) => kw.toLowerCase().includes(q));
+
+      return matchesCategory && matchesSearch;
+    });
+  }, [selectedCategory, searchQuery]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -79,140 +115,172 @@ export const LandingView: React.FC<LandingViewProps> = ({
     }
   };
 
-  const handleToolSelect = (tool: ToolItem) => {
-    if (tool.viewKey) {
-      onSelectTool(tool.viewKey);
-    } else if (tool.actionKey) {
-      if (tool.actionKey === 'merge') onSelectTool('merge');
-      else if (tool.actionKey === 'split') onSelectTool('split');
-      else if (tool.actionKey === 'organize') onSelectTool('organize');
-      else if (tool.actionKey === 'view') onSelectTool('viewer');
-      else onSelectTool('tools');
-    } else {
-      onSelectTool('tools');
-    }
+  const handleToolClick = (tool: CanonicalPdfTool) => {
+    if (tool.status !== 'available') return;
+    onSelectTool(tool.routeView);
   };
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 py-4 space-y-10">
-      {/* Hero Section (Section 4 & 40) */}
-      <section className="text-center space-y-4 pt-4 pb-2">
-        <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider bg-orange-50 text-orange-700 border border-orange-200/80 shadow-2xs">
-          <Sparkles className="w-3 h-3 text-orange-500" />
-          <span>Local-First Architecture • In-Browser Processing</span>
+    <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 py-3 space-y-10">
+      {/* 1. Utility Ingestion & Platform Banner */}
+      <section className="bg-white rounded-3xl border border-stone-200/90 p-6 sm:p-8 shadow-xs space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+          <div className="space-y-2 max-w-xl">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider bg-orange-50 text-orange-700 border border-orange-200/80">
+              <Sparkles className="w-3 h-3 text-orange-500" />
+              <span>A Local-First PDF Tool Platform</span>
+            </div>
+
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-stone-900 tracking-tight leading-tight">
+              Work with PDFs directly in your browser.
+            </h1>
+
+            <p className="text-xs sm:text-sm text-stone-600 leading-relaxed">
+              PDF operations run directly on your device. Zero document uploads, no remote file servers, and instant execution powered by Web Workers and client-side binary engines.
+            </p>
+          </div>
+
+          {/* Quick Platform Metrics / Trust Signals */}
+          <div className="grid grid-cols-2 gap-3 shrink-0">
+            <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 text-center space-y-1">
+              <div className="text-xs font-bold text-emerald-700 flex items-center justify-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>100% In-Browser</span>
+              </div>
+              <div className="text-[11px] text-stone-500">Document bytes stay local</div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 text-center space-y-1">
+              <div className="text-xs font-bold text-stone-800 flex items-center justify-center gap-1">
+                <HardDrive className="w-3.5 h-3.5 text-stone-500" />
+                <span>Zero Server Uploads</span>
+              </div>
+              <div className="text-[11px] text-stone-500">Safe for private files</div>
+            </div>
+          </div>
         </div>
 
-        <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-stone-900 tracking-tight max-w-3xl mx-auto leading-tight">
-          Everything you need to work with PDFs.
-        </h1>
-
-        <p className="text-sm sm:text-base text-stone-600 max-w-2xl mx-auto font-normal leading-relaxed">
-          Work with PDFs directly in your browser. Supported PDF operations run on your device without uploading your PDF for processing.
-        </p>
-
-        {/* Drop Zone */}
+        {/* Ingestion Dropzone */}
         <div
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`max-w-2xl mx-auto mt-4 p-8 sm:p-10 rounded-3xl border-2 border-dashed transition-all bg-white shadow-xs flex flex-col items-center justify-center text-center ${
+          id="home-dropzone"
+          className={`p-6 sm:p-8 rounded-2xl border-2 border-dashed transition-all flex flex-col items-center justify-center text-center ${
             isDragging
-              ? 'border-orange-500 bg-orange-50/40 scale-[1.01]'
-              : 'border-stone-300 hover:border-orange-300'
+              ? 'border-orange-500 bg-orange-50/50 scale-[1.01]'
+              : 'border-stone-300 bg-stone-50/50 hover:border-orange-300 hover:bg-stone-50'
           }`}
         >
-          <div className="w-14 h-14 rounded-2xl bg-orange-100/70 text-orange-600 flex items-center justify-center mb-3.5 shadow-xs">
-            <Upload className="w-7 h-7" />
+          <div className="w-12 h-12 rounded-2xl bg-orange-100/80 text-orange-600 flex items-center justify-center mb-3 shadow-xs">
+            <Upload className="w-6 h-6" />
           </div>
 
-          <h2 className="text-base sm:text-lg font-bold text-stone-900 mb-1">
-            Drop your PDF files here
+          <h2 className="text-sm sm:text-base font-bold text-stone-900 mb-1">
+            Drop PDF files to open workspace
           </h2>
-          <p className="text-xs text-stone-500 mb-5 max-w-md">
-            Supports single or multiple PDF documents. Files are processed directly in your browser.
+          <p className="text-xs text-stone-500 mb-4 max-w-md">
+            Open any PDF document to view, search, rotate, extract, or reorder pages in real-time.
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-2.5">
-            {onOpenFocusModal && (
-              <button
-                onClick={onOpenFocusModal}
-                id="btn-landing-focus"
-                className="px-5 py-2.5 rounded-full text-xs font-semibold bg-white text-stone-700 border border-stone-200 hover:border-orange-200 hover:bg-orange-50/50 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-              >
-                <span>Work & Focus</span>
-              </button>
-            )}
+            <button
+              onClick={onOpenPdf}
+              id="btn-home-open-pdf"
+              className="px-5 py-2 rounded-full text-xs font-bold bg-orange-500 text-white hover:bg-orange-600 shadow-xs shadow-orange-500/25 transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Open PDF</span>
+            </button>
 
             <button
               onClick={onTrySample}
-              id="btn-landing-sample"
-              className="px-5 py-2.5 rounded-full text-xs font-semibold bg-stone-100 text-stone-700 hover:bg-stone-200 transition-all flex items-center gap-1.5 cursor-pointer"
+              id="btn-home-try-sample"
+              className="px-4 py-2 rounded-full text-xs font-semibold bg-white text-stone-700 border border-stone-200 hover:border-stone-300 hover:bg-stone-50 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
             >
               <FileText className="w-3.5 h-3.5 text-stone-500" />
               <span>Try Sample PDF</span>
             </button>
 
-            <button
-              onClick={onOpenPdf}
-              id="btn-landing-open"
-              className="px-6 py-2.5 rounded-full text-xs font-bold bg-orange-500 text-white hover:bg-orange-600 shadow-xs shadow-orange-500/25 transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Open PDF</span>
-            </button>
+            {onOpenFocusModal && (
+              <button
+                onClick={onOpenFocusModal}
+                id="btn-home-focus"
+                className="px-4 py-2 rounded-full text-xs font-semibold bg-white text-stone-700 border border-stone-200 hover:border-orange-200 hover:bg-orange-50/40 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              >
+                <span>Work & Focus Audio</span>
+              </button>
+            )}
           </div>
         </div>
       </section>
 
-      {/* Category Filter Pills (Section 4 & 40) */}
+      {/* 2. Tool Directory Hub & Filter Bar */}
       <section className="space-y-4">
-        <div className="flex items-center justify-between pb-1">
-          <h2 className="text-lg sm:text-xl font-extrabold text-stone-900 tracking-tight">
-            All PDF Tools
-          </h2>
-          <span className="text-xs text-stone-400 font-medium">
-            Showing {displayedTools.length} {displayedTools.length === 1 ? 'tool' : 'tools'}
-          </span>
-        </div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg sm:text-xl font-extrabold text-stone-900 tracking-tight">
+              PDF Tool Directory
+            </h2>
+            <p className="text-xs text-stone-500">
+              Browse ready client-side tools and planned offline modules.
+            </p>
+          </div>
 
-        <div className="flex items-center justify-between flex-wrap gap-3 pb-2 border-b border-stone-200/70">
-          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-1">
-            {CATEGORY_PILLS.map((pill) => {
-              const isSelected = selectedCategory === pill.id;
-              return (
-                <button
-                  key={pill.id}
-                  onClick={() => setSelectedCategory(pill.id)}
-                  id={`pill-cat-${pill.id}`}
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                    isSelected
-                      ? 'bg-stone-900 text-white shadow-xs'
-                      : 'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200/80 hover:text-stone-900'
-                  }`}
-                >
-                  {pill.label}
-                </button>
-              );
-            })}
+          {/* Search bar */}
+          <div className="relative w-full sm:w-72">
+            <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              id="home-tool-search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Filter tools (e.g. merge, split, rotate)..."
+              className="w-full pl-9 pr-4 py-1.5 rounded-xl bg-white border border-stone-200 text-xs font-medium text-stone-900 placeholder:text-stone-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-all"
+            />
           </div>
         </div>
 
-        {/* Tool Cards Grid (Section 4 & 11) */}
+        {/* Category Tabs */}
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-2 border-b border-stone-200/70">
+          {CATEGORY_TABS.map((tab) => {
+            const isSelected = selectedCategory === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setSelectedCategory(tab.id)}
+                id={`home-tab-${tab.id}`}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                  isSelected
+                    ? 'bg-stone-900 text-white shadow-xs'
+                    : 'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200/80 hover:text-stone-900'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Tools Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {displayedTools.map((tool) => (
+          {filteredTools.map((tool) => (
             <ToolCard
               key={tool.id}
               tool={tool}
-              iconNode={tool.icon}
-              onSelect={handleToolSelect}
+              onSelect={handleToolClick}
+              isProUser={isPro}
             />
           ))}
         </div>
       </section>
 
-      {/* Recent Documents Drawer (if documents exist) */}
+      {/* 3. Recent Documents (IndexedDB) */}
       {recentDocuments.length > 0 && onOpenRecentDocument && (
-        <section className="bg-white rounded-3xl border border-stone-200/90 p-5 sm:p-6 shadow-xs space-y-3">
+        <section
+          id="recent-documents-section"
+          className="bg-white rounded-3xl border border-stone-200/90 p-5 sm:p-6 shadow-xs space-y-3"
+        >
           <div className="flex items-center justify-between pb-2 border-b border-stone-100">
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-stone-400" />
@@ -220,7 +288,9 @@ export const LandingView: React.FC<LandingViewProps> = ({
                 Recent In-Browser Documents
               </h3>
             </div>
-            <span className="text-[11px] text-stone-400">Stored in device IndexedDB</span>
+            <span className="text-[11px] text-stone-400 font-medium">
+              Stored locally on this device in IndexedDB
+            </span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
@@ -228,12 +298,15 @@ export const LandingView: React.FC<LandingViewProps> = ({
               <div
                 key={doc.id}
                 onClick={() => onOpenRecentDocument(doc)}
-                className="p-3 rounded-2xl border border-stone-200/80 bg-stone-50/50 hover:bg-white hover:border-orange-200 transition-all cursor-pointer flex items-center justify-between group"
+                className="p-3.5 rounded-2xl border border-stone-200/80 bg-stone-50/50 hover:bg-white hover:border-orange-200 transition-all cursor-pointer flex items-center justify-between group"
               >
                 <div className="flex items-center gap-2.5 truncate">
                   <FileText className="w-4 h-4 text-orange-500 shrink-0" />
                   <div className="truncate">
-                    <div className="text-xs font-bold text-stone-900 group-hover:text-orange-600 truncate" title={doc.name}>
+                    <div
+                      className="text-xs font-bold text-stone-900 group-hover:text-orange-600 truncate"
+                      title={doc.name}
+                    >
                       {doc.name}
                     </div>
                     <div className="text-[10px] text-stone-500">
@@ -248,31 +321,90 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </section>
       )}
 
-      {/* Architecture Advantage Card (Section 13 & 14) */}
+      {/* 4. Local-First Privacy & Trust Architecture Explanation */}
+      <section className="bg-white rounded-3xl border border-stone-200/90 p-6 sm:p-8 shadow-xs space-y-6">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-5 h-5 text-emerald-600" />
+          <h2 className="text-base sm:text-lg font-bold text-stone-900">
+            Clear Separation: Local Processing vs. Cloud Services
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Local Processing Side */}
+          <div className="p-5 rounded-2xl bg-emerald-50/50 border border-emerald-200/80 space-y-3">
+            <div className="flex items-center gap-2">
+              <HardDrive className="w-4 h-4 text-emerald-700" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-900">
+                Processed 100% on Your Device
+              </h3>
+            </div>
+            <ul className="space-y-2 text-xs text-stone-600">
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                <span><strong>PDF Binary Bytes:</strong> Loaded and parsed in browser memory via pdf-lib and PDF.js.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                <span><strong>Document Rebuilding:</strong> Page rotations, merges, splits, and deletions execute locally.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                <span><strong>Document Storage:</strong> Cached strictly in device IndexedDB for instant reload.</span>
+              </li>
+            </ul>
+          </div>
+
+          {/* Server / Cloud Boundary Side */}
+          <div className="p-5 rounded-2xl bg-stone-50 border border-stone-200 space-y-3">
+            <div className="flex items-center gap-2">
+              <Cloud className="w-4 h-4 text-stone-700" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-stone-900">
+                Managed on Server (No File Access)
+              </h3>
+            </div>
+            <ul className="space-y-2 text-xs text-stone-600">
+              <li className="flex items-start gap-2">
+                <Lock className="w-3.5 h-3.5 text-stone-500 shrink-0 mt-0.5" />
+                <span><strong>Account & Authentication:</strong> Secure server-side sessions and credentials.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Lock className="w-3.5 h-3.5 text-stone-500 shrink-0 mt-0.5" />
+                <span><strong>Subscription & Entitlements:</strong> Authoritative Lemon Squeezy tier checks.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Lock className="w-3.5 h-3.5 text-stone-500 shrink-0 mt-0.5" />
+                <span><strong>Strict Separation:</strong> The server never receives, reads, or stores your PDF files.</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* 5. Free vs Pro Product Boundaries */}
       <section className="bg-white rounded-3xl border border-stone-200/90 p-6 sm:p-8 shadow-xs">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div className="space-y-2 max-w-xl">
-            <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              Same PDF work. Different architecture.
+            <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-stone-100 text-stone-700 border border-stone-200">
+              <span>Transparent Tier Boundaries</span>
             </div>
-            <h3 className="text-lg sm:text-xl font-bold text-stone-900 tracking-tight">
-              LOCAL — Processing on this device
+            <h3 className="text-base sm:text-lg font-bold text-stone-900">
+              Free forever for local work. Pro for high-capacity batching.
             </h3>
-            <p className="text-xs sm:text-sm text-stone-500 leading-relaxed">
-              Mainstream PDF utilities upload your documents to remote cloud servers. PDF-LoFi executes supported operations directly in your browser sandbox using compiled client-side engines.
+            <p className="text-xs text-stone-500 leading-relaxed">
+              Standard local processing (Merge up to 5 files, Split, Organize, Rotate, Delete) is always free and uncapped. Pro unlocks heavy file sizes up to 500 MB and 50-file batch merges.
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 shrink-0">
-            <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 text-center space-y-1">
-              <div className="text-xs font-bold text-emerald-700">100% In-Browser</div>
-              <div className="text-[11px] text-stone-500">Zero cloud uploads</div>
-            </div>
-            <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 text-center space-y-1">
-              <div className="text-xs font-bold text-stone-800">No Account</div>
-              <div className="text-[11px] text-stone-500">Instant access</div>
-            </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <button
+              onClick={() => onSelectTool('pricing')}
+              id="btn-home-pricing"
+              className="px-5 py-2.5 rounded-full text-xs font-bold bg-stone-900 text-white hover:bg-stone-800 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+            >
+              <span>View Plans & Pricing</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       </section>

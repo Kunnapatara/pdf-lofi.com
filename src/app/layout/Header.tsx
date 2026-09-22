@@ -7,13 +7,12 @@ import {
   ShieldCheck,
   GitMerge,
   Scissors,
-  Minimize2,
-  FileImage,
-  Grid,
   Layers,
-  WifiOff,
+  Grid,
   CreditCard,
   User,
+  Clock,
+  WifiOff,
 } from 'lucide-react';
 import { LocalDocument, AppView } from '../../types/pdf';
 import { useEntitlements } from '../../services/entitlementService';
@@ -26,6 +25,7 @@ interface HeaderProps {
   onLoadSample: () => void;
   onSelectFile: (e: React.ChangeEvent<HTMLInputElement>) => void;
   isFocusActive?: boolean;
+  recentCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -36,10 +36,11 @@ export const Header: React.FC<HeaderProps> = ({
   onLoadSample,
   onSelectFile,
   isFocusActive = false,
+  recentCount = 0,
 }) => {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const { isPro, plan } = useEntitlements();
+  const { isPro } = useEntitlements();
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -54,13 +55,13 @@ export const Header: React.FC<HeaderProps> = ({
     };
   }, []);
 
-  const navItems: { id: AppView; label: string; icon?: React.ReactNode }[] = [
-    { id: 'home', label: 'Home' },
-    { id: 'merge', label: 'Merge PDF', icon: <GitMerge className="w-3.5 h-3.5" /> },
-    { id: 'split', label: 'Split PDF', icon: <Scissors className="w-3.5 h-3.5" /> },
-    { id: 'compress', label: 'Compress PDF', icon: <Minimize2 className="w-3.5 h-3.5" /> },
-    { id: 'convert', label: 'Convert PDF', icon: <FileImage className="w-3.5 h-3.5" /> },
-    { id: 'tools', label: 'All Tools', icon: <Grid className="w-3.5 h-3.5" /> },
+  // Canonical Primary Navigation: Home, Tools Directory, Merge, Split, Organize, Pricing, Recent Files, Account
+  const navItems: { id: AppView; label: string; icon: React.ReactNode }[] = [
+    { id: 'home', label: 'Home', icon: <span className="w-2 h-2 rounded-full bg-orange-500"></span> },
+    { id: 'tools', label: 'Tools', icon: <Grid className="w-3.5 h-3.5" /> },
+    { id: 'merge', label: 'Merge', icon: <GitMerge className="w-3.5 h-3.5" /> },
+    { id: 'split', label: 'Split', icon: <Scissors className="w-3.5 h-3.5" /> },
+    { id: 'organize', label: 'Organize', icon: <Layers className="w-3.5 h-3.5" /> },
     { id: 'pricing', label: 'Pricing', icon: <CreditCard className="w-3.5 h-3.5" /> },
   ];
 
@@ -78,7 +79,10 @@ export const Header: React.FC<HeaderProps> = ({
                 Local-First PDF Workspace
               </span>
 
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/70" title="Supported PDF operations run on your device">
+              <span
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/70"
+                title="Supported PDF operations run 100% on your device without server upload"
+              >
                 <ShieldCheck className="w-3 h-3 text-emerald-600" />
                 LOCAL — Processing on this device
               </span>
@@ -102,11 +106,11 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             <p className="text-xs text-stone-500">
-              Work with PDFs directly in your browser. Supported operations run on your device.
+              A local-first PDF tool platform. Supported operations run in your browser without cloud document uploads.
             </p>
           </div>
 
-          {/* Right Column: QRxMENU-style Action Pills */}
+          {/* Right Column: Action Pills */}
           <div className="flex items-center flex-wrap gap-2 self-start md:self-center">
             {/* Work & Focus Audio Toggle */}
             <button
@@ -155,9 +159,9 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Second Row: Primary Tool Navigation as required by Section 5 */}
+        {/* Second Row: Primary Tool Navigation */}
         <nav
-          aria-label="Primary PDF Tools"
+          aria-label="Primary Navigation"
           className="flex items-center gap-1.5 overflow-x-auto pt-3 border-t border-stone-100 scrollbar-none"
         >
           {navItems.map((item) => {
@@ -179,20 +183,41 @@ export const Header: React.FC<HeaderProps> = ({
             );
           })}
 
-          {/* If a document is loaded, also show Workspace view tab */}
+          {/* Quick jump to Recent Files on Home if any stored */}
+          {recentCount > 0 && (
+            <button
+              onClick={() => {
+                onNavigateView('home');
+                setTimeout(() => {
+                  const el = document.getElementById('recent-documents-section');
+                  el?.scrollIntoView({ behavior: 'smooth' });
+                }, 50);
+              }}
+              id="nav-recent-files"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold whitespace-nowrap bg-stone-50/80 text-stone-700 hover:bg-stone-100 hover:text-stone-950 border border-stone-200/60 transition-all cursor-pointer"
+            >
+              <Clock className="w-3.5 h-3.5 text-stone-500" />
+              <span>Recent Files</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-stone-200 text-stone-700 text-[10px] font-bold">
+                {recentCount}
+              </span>
+            </button>
+          )}
+
+          {/* If a document is loaded, show active Workspace tab */}
           {currentDocument && (
             <button
               onClick={() => onNavigateView('workspace')}
               id="nav-workspace"
               className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ml-auto cursor-pointer ${
-                currentView === 'workspace' || currentView === 'organize' || currentView === 'viewer'
+                currentView === 'workspace'
                   ? 'bg-stone-900 text-white shadow-xs'
                   : 'bg-stone-50/80 text-stone-700 hover:bg-stone-100 border border-stone-200/60'
               }`}
             >
               <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
               <Layers className="w-3.5 h-3.5" />
-              <span>Advanced Workspace</span>
+              <span>Active Workspace</span>
             </button>
           )}
 
@@ -225,4 +250,3 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
-
