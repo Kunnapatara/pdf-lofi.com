@@ -12,6 +12,8 @@ import { SplitToolView } from './features/tools/SplitToolView';
 import { PlaceholderToolView } from './features/tools/PlaceholderToolView';
 import { ToolsDirectory } from './features/tools/ToolsDirectory';
 import { WorkspaceView } from './features/workspace/WorkspaceView';
+import { PricingView } from './features/pricing/PricingView';
+import { AccountView } from './features/account/AccountView';
 import { LocalDocument, ActiveTab, AppView } from './types/pdf';
 import { getPdfMetadata, clearPdfCache } from './pdf/pdfRenderer';
 import { generateSamplePdf } from './pdf/samplePdf';
@@ -64,6 +66,21 @@ export default function App() {
       }
     }
     loadRecent();
+
+    // Check URL parameters for view routing (e.g. from checkout redirect)
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const viewParam = params.get('view');
+      if (viewParam === 'account' || viewParam === 'pricing') {
+        setCurrentView(viewParam);
+      }
+      if (params.get('checkout') === 'success') {
+        setNotification({
+          message: 'Welcome to Pro Pass! Your subscription has been recorded.',
+          type: 'info',
+        });
+      }
+    }
   }, []);
 
   // Helper to ingest a PDF from raw bytes
@@ -382,6 +399,14 @@ export default function App() {
                 setIsFocusMinimized(false);
               }}
             />
+          )}
+
+          {currentView === 'pricing' && (
+            <PricingView onNavigateView={handleNavigateView} />
+          )}
+
+          {currentView === 'account' && (
+            <AccountView onNavigateView={handleNavigateView} />
           )}
         </main>
       </div>

@@ -12,8 +12,11 @@ import {
   Grid,
   Layers,
   WifiOff,
+  CreditCard,
+  User,
 } from 'lucide-react';
 import { LocalDocument, AppView } from '../../types/pdf';
+import { useEntitlements } from '../../services/entitlementService';
 
 interface HeaderProps {
   currentView: AppView;
@@ -36,6 +39,7 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const { isPro, plan } = useEntitlements();
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -57,6 +61,7 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'compress', label: 'Compress PDF', icon: <Minimize2 className="w-3.5 h-3.5" /> },
     { id: 'convert', label: 'Convert PDF', icon: <FileImage className="w-3.5 h-3.5" /> },
     { id: 'tools', label: 'All Tools', icon: <Grid className="w-3.5 h-3.5" /> },
+    { id: 'pricing', label: 'Pricing', icon: <CreditCard className="w-3.5 h-3.5" /> },
   ];
 
   return (
@@ -190,6 +195,31 @@ export const Header: React.FC<HeaderProps> = ({
               <span>Advanced Workspace</span>
             </button>
           )}
+
+          {/* Account & Billing Navigation Button */}
+          <button
+            onClick={() => onNavigateView('account')}
+            id="nav-account"
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+              !currentDocument ? 'ml-auto' : ''
+            } ${
+              currentView === 'account'
+                ? 'bg-stone-900 text-white shadow-xs'
+                : 'bg-stone-50/80 text-stone-700 hover:bg-stone-100 border border-stone-200/60'
+            }`}
+          >
+            <User className="w-3.5 h-3.5" />
+            <span>Account</span>
+            <span
+              className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                isPro
+                  ? 'bg-orange-500 text-white shadow-xs'
+                  : 'bg-stone-200 text-stone-700'
+              }`}
+            >
+              {isPro ? 'Pro' : 'Free'}
+            </span>
+          </button>
         </nav>
       </div>
     </header>

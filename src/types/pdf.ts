@@ -34,7 +34,7 @@ export interface SearchMatch {
 
 export type ActiveTab = 'view' | 'organize' | 'merge' | 'split' | 'tools';
 
-export type AppView = 'home' | 'merge' | 'split' | 'compress' | 'convert' | 'tools' | 'workspace' | 'organize' | 'viewer';
+export type AppView = 'home' | 'merge' | 'split' | 'compress' | 'convert' | 'tools' | 'workspace' | 'organize' | 'viewer' | 'pricing' | 'account';
 
 export type ToolCategory =
   | 'all'
