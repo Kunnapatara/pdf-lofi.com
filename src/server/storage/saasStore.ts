@@ -194,6 +194,12 @@ class SaaSStore {
     return this.state.users[userId] || null;
   }
 
+  findUserByEmail(email: string): SaaSUser | null {
+    const clean = email.trim().toLowerCase();
+    const users = Object.values(this.state.users);
+    return users.find((u) => u.email.toLowerCase() === clean) || null;
+  }
+
   getDefaultUser(): SaaSUser {
     const firstUserId = Object.keys(this.state.users)[0];
     if (firstUserId && this.state.users[firstUserId]) {

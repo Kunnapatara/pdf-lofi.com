@@ -1,0 +1,134 @@
+{
+  "users": {
+    "usr_default_creator": {
+      "id": "usr_default_creator",
+      "email": "creator@pdf-lofi.com",
+      "name": "PDF Artisan",
+      "createdAt": 1789483024504
+    },
+    "usr_1790088844838_spq4h": {
+      "id": "usr_1790088844838_spq4h",
+      "email": "usera@test.com",
+      "name": "User Alpha",
+      "createdAt": 1790088844838
+    },
+    "usr_1790088856499_kcyvw": {
+      "id": "usr_1790088856499_kcyvw",
+      "email": "userb@test.com",
+      "name": "User Bravo",
+      "createdAt": 1790088856499
+    }
+  },
+  "subscriptions": {
+    "usr_default_creator": {
+      "id": "sub_default_free",
+      "userId": "usr_default_creator",
+      "planId": "free",
+      "status": "active",
+      "lemonSqueezySubscriptionId": null,
+      "lemonSqueezyCustomerId": null,
+      "lemonSqueezyOrderId": null,
+      "lemonSqueezyVariantId": null,
+      "renewsAt": null,
+      "endsAt": null,
+      "trialEndsAt": null,
+      "isPaused": false,
+      "cancelAtPeriodEnd": false,
+      "createdAt": 1789483024504,
+      "updatedAt": 1790087824504
+    },
+    "usr_1790088844838_spq4h": {
+      "id": "sub_1790088850912_jwi1i",
+      "userId": "usr_1790088844838_spq4h",
+      "planId": "free",
+      "status": "active",
+      "lemonSqueezySubscriptionId": null,
+      "lemonSqueezyCustomerId": null,
+      "lemonSqueezyOrderId": null,
+      "lemonSqueezyVariantId": null,
+      "renewsAt": null,
+      "endsAt": null,
+      "trialEndsAt": null,
+      "isPaused": false,
+      "cancelAtPeriodEnd": false,
+      "createdAt": 1790088850912,
+      "updatedAt": 1790088850912
+    },
+    "usr_1790088856499_kcyvw": {
+      "id": "sub_1790088860424_qkbfc",
+      "userId": "usr_1790088856499_kcyvw",
+      "planId": "free",
+      "status": "active",
+      "lemonSqueezySubscriptionId": null,
+      "lemonSqueezyCustomerId": null,
+      "lemonSqueezyOrderId": null,
+      "lemonSqueezyVariantId": null,
+      "renewsAt": null,
+      "endsAt": null,
+      "trialEndsAt": null,
+      "isPaused": false,
+      "cancelAtPeriodEnd": false,
+      "createdAt": 1790088860424,
+      "updatedAt": 1790088860424
+    }
+  },
+  "usage": {
+    "usr_default_creator": {
+      "userId": "usr_default_creator",
+      "period": "2026-09",
+      "creditsTotal": 10,
+      "creditsUsed": 1,
+      "creditsRemaining": 9,
+      "operationsCount": 3,
+      "recentEvents": [
+        {
+          "id": "evt_sample_1",
+          "type": "pdf_operation_local",
+          "timestamp": 1790080624504,
+          "credits": 0,
+          "description": "Local PDF Reorder & Rotate (Free unlimited)"
+        }
+      ]
+    },
+    "usr_1790088844838_spq4h": {
+      "userId": "usr_1790088844838_spq4h",
+      "period": "2026-09",
+      "creditsTotal": 10,
+      "creditsUsed": 1,
+      "creditsRemaining": 9,
+      "operationsCount": 1,
+      "recentEvents": [
+        {
+          "id": "evt_1790088854750_drao",
+          "type": "test_op",
+          "timestamp": 1790088854750,
+          "credits": 1,
+          "description": "Test audit"
+        }
+      ]
+    },
+    "usr_1790088856499_kcyvw": {
+      "userId": "usr_1790088856499_kcyvw",
+      "period": "2026-09",
+      "creditsTotal": 10,
+      "creditsUsed": 0,
+      "creditsRemaining": 10,
+      "operationsCount": 0,
+      "recentEvents": []
+    }
+  },
+  "webhookEvents": {
+    "test_evt_unresolvable_1": {
+      "eventId": "test_evt_unresolvable_1",
+      "eventName": "subscription_created",
+      "processedAt": 1790088868522,
+      "status": "failed"
+    },
+    "test_replay_evt_1": {
+      "eventId": "test_replay_evt_1",
+      "eventName": "subscription_created",
+      "processedAt": 1790088873840,
+      "status": "processed"
+    }
+  }
+}

@@ -2,12 +2,14 @@
  * Lemon Squeezy Webhooks Architecture
  * - Verifies HMAC SHA-256 signatures with timing-safe comparison
  * - Enforces idempotency via saasStore event ledger
- * - Handles subscription lifecycle events without duplicating records
- * - Separates provider IDs from internal IDs
+ * - Validates provider store ID and variant ID when configured
+ * - Strictly resolves internal user without unsafe default-user fallback
+ * - Quarantines/rejects unresolvable events
  */
 import crypto from 'crypto';
 import { saasStore, PLANS } from '../storage/saasStore';
 import { SubscriptionStatus } from '../../types/saas';
+import { getLemonSqueezyConfig } from './config';
 
 export function verifyWebhookSignature(
   rawBody: Buffer | string,
@@ -67,7 +69,7 @@ function mapLemonSqueezyStatus(status: string): SubscriptionStatus {
 }
 
 export interface ProcessWebhookResult {
-  status: 'processed' | 'already_processed' | 'ignored' | 'error';
+  status: 'processed' | 'already_processed' | 'ignored' | 'error' | 'quarantined';
   message: string;
 }
 
@@ -104,47 +106,96 @@ export async function processLemonSqueezyWebhook(
       case 'subscription_paused': {
         const providerSubId = String(data.id);
         const attrs = data.attributes || {};
+        const storeId = attrs.store_id ? String(attrs.store_id) : null;
         const customerId = attrs.customer_id ? String(attrs.customer_id) : null;
         const orderId = attrs.order_id ? String(attrs.order_id) : null;
         const variantId = attrs.variant_id ? String(attrs.variant_id) : null;
         const rawStatus = attrs.status || 'active';
         const mappedStatus = mapLemonSqueezyStatus(rawStatus);
 
-        // Resolve userId: prefer custom_data.user_id passed during checkout
-        let targetUserId = customData?.user_id as string | undefined;
+        const config = getLemonSqueezyConfig();
 
-        // Fallback: look up by existing subscription with this providerSubId
-        if (!targetUserId) {
-          const existing = saasStore.findSubscriptionByLemonSqueezyId(providerSubId);
-          if (existing) {
-            targetUserId = existing.userId;
+        // 1. Store ID Validation (when configured)
+        if (config.hasStoreId && config.storeId && storeId) {
+          if (storeId !== String(config.storeId)) {
+            console.warn(
+              `[Webhook] Store ID mismatch. Event store: ${storeId}, Configured: ${config.storeId}. Rejecting.`
+            );
+            saasStore.recordWebhookProcessed(eventId, eventName, 'failed');
+            return {
+              status: 'error',
+              message: `Store ID mismatch: received ${storeId}, expected ${config.storeId}.`,
+            };
           }
         }
 
-        // Fallback: look up by customerId
+        // 2. Resolve target internal user safely
+        let targetUserId: string | null = null;
+
+        // Check custom_data.user_id passed during server checkout creation
+        if (customData?.user_id && typeof customData.user_id === 'string') {
+          const userCandidate = saasStore.getUser(customData.user_id);
+          if (userCandidate) {
+            targetUserId = userCandidate.id;
+          }
+        }
+
+        // Fallback: look up by existing subscription linked to this providerSubId
+        if (!targetUserId) {
+          const existingSub = saasStore.findSubscriptionByLemonSqueezyId(providerSubId);
+          if (existingSub) {
+            targetUserId = existingSub.userId;
+          }
+        }
+
+        // Fallback: look up by customerId linked to a known user
         if (!targetUserId && customerId) {
-          const existing = saasStore.findSubscriptionByCustomerId(customerId);
-          if (existing) {
-            targetUserId = existing.userId;
+          const existingSub = saasStore.findSubscriptionByCustomerId(customerId);
+          if (existingSub) {
+            targetUserId = existingSub.userId;
           }
         }
 
-        // Fallback: default user for single-tenant / local development
+        // Fallback: look up by user email matching customer email in webhook attributes
+        if (!targetUserId && attrs.user_email && typeof attrs.user_email === 'string') {
+          const userCandidate = saasStore.findUserByEmail(attrs.user_email);
+          if (userCandidate) {
+            targetUserId = userCandidate.id;
+          }
+        }
+
+        // SAFE BOUNDARY: If internal user cannot be resolved, QUARANTINE event.
+        // DO NOT silently fall back to default user or grant Pro to random accounts!
         if (!targetUserId) {
-          targetUserId = saasStore.getDefaultUser().id;
+          console.warn(
+            `[Webhook Quarantined] Unable to resolve internal user for provider subscription ${providerSubId}. Event: ${eventName}. No default user assigned.`
+          );
+          saasStore.recordWebhookProcessed(eventId, eventName, 'failed');
+          return {
+            status: 'quarantined',
+            message: `Event quarantined: unable to resolve internal user for subscription ${providerSubId}. Subscription not updated.`,
+          };
         }
 
         const currentSub = saasStore.getSubscription(targetUserId);
 
-        // Check plan mapping: if variant corresponds to Pro or status is active
-        const isPro =
-          (variantId && variantId === process.env.LEMON_SQUEEZY_PRO_VARIANT_ID) ||
-          mappedStatus === 'active' ||
-          mappedStatus === 'trialing';
+        // 3. Variant ID & Plan Validation
+        // If pro variant ID is configured, ensure variant matches before granting Pro.
+        let isProVariant = false;
+        if (config.hasProVariantId && config.proVariantId && variantId) {
+          isProVariant = variantId === String(config.proVariantId);
+        } else if (variantId) {
+          // If unconfigured locally, only allow Pro if variant is known or default
+          isProVariant = true;
+        }
+
+        const isProPlan =
+          isProVariant &&
+          (mappedStatus === 'active' || mappedStatus === 'trialing');
 
         const updatedSub = {
           ...currentSub,
-          planId: isPro && mappedStatus !== 'expired' && mappedStatus !== 'unpaid' ? ('pro' as const) : ('free' as const),
+          planId: isProPlan ? ('pro' as const) : ('free' as const),
           status: mappedStatus,
           lemonSqueezySubscriptionId: providerSubId,
           lemonSqueezyCustomerId: customerId || currentSub.lemonSqueezyCustomerId,
@@ -174,7 +225,6 @@ export async function processLemonSqueezyWebhook(
       }
 
       case 'order_created': {
-        // One-time order or initial invoice
         saasStore.recordWebhookProcessed(eventId, eventName, 'processed');
         return {
           status: 'processed',

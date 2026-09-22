@@ -1,7 +1,9 @@
 /**
  * Client-side SaaS & Billing Service
  * Communicates with the server-side SaaS layer.
- * Enforces that entitlements and plan permissions originate from the server.
+ * - Manages server-authoritative authenticated session initialization
+ * - Automatically credentials API requests with cookies/credentials: 'include'
+ * - Enforces that entitlements and plan permissions originate from the server
  */
 import {
   BillingStateResponse,
@@ -18,12 +20,33 @@ class SaaSService {
   private currentState: BillingStateResponse | null = null;
   private listeners: Set<(state: BillingStateResponse) => void> = new Set();
   private isFetching = false;
+  private sessionInitialized = false;
 
   constructor() {
-    // Initial fetch from server
     if (typeof window !== 'undefined') {
-      this.refreshState();
+      this.initSessionAndLoad();
     }
+  }
+
+  /**
+   * Initializes or restores the authenticated session with the server,
+   * then fetches the authoritative billing state.
+   */
+  async initSessionAndLoad(): Promise<void> {
+    try {
+      // Ensure server session is established
+      const initRes = await fetch('/api/auth/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+      if (initRes.ok) {
+        this.sessionInitialized = true;
+      }
+    } catch (err) {
+      console.warn('Session initialization notice (offline/local):', err);
+    }
+    await this.refreshState();
   }
 
   subscribe(listener: (state: BillingStateResponse) => void): () => void {
@@ -56,7 +79,22 @@ class SaaSService {
     this.isFetching = true;
 
     try {
-      const res = await fetch('/api/billing/state');
+      const res = await fetch('/api/billing/state', {
+        credentials: 'include',
+      });
+      if (res.status === 401 && !this.sessionInitialized) {
+        // Attempt session init once and retry
+        await fetch('/api/auth/init', { method: 'POST', credentials: 'include' });
+        this.sessionInitialized = true;
+        const retryRes = await fetch('/api/billing/state', { credentials: 'include' });
+        if (retryRes.ok) {
+          const data: BillingStateResponse = await retryRes.json();
+          this.currentState = data;
+          this.notify();
+          return data;
+        }
+      }
+
       if (!res.ok) {
         throw new Error(`Failed to fetch billing state: ${res.statusText}`);
       }
@@ -73,7 +111,7 @@ class SaaSService {
   }
 
   async fetchPlans(): Promise<{ plans: PlanDefinition[]; lemonSqueezyConfig: LemonSqueezyConfigStatus }> {
-    const res = await fetch('/api/plans');
+    const res = await fetch('/api/plans', { credentials: 'include' });
     if (!res.ok) {
       throw new Error('Failed to load plans');
     }
@@ -86,6 +124,7 @@ class SaaSService {
     const res = await fetch('/api/billing/checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({
         planId,
         redirectUrl: `${window.location.origin}/?view=account&checkout=success`,
@@ -97,7 +136,7 @@ class SaaSService {
   }
 
   async fetchCustomerPortalUrl(): Promise<{ success: boolean; portalUrl?: string; error?: string }> {
-    const res = await fetch('/api/billing/portal');
+    const res = await fetch('/api/billing/portal', { credentials: 'include' });
     return res.json();
   }
 
@@ -110,6 +149,7 @@ class SaaSService {
       const res = await fetch('/api/usage/record', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ operationType, description, creditsCost }),
       });
 

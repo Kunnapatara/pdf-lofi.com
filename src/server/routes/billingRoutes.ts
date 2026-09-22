@@ -1,24 +1,43 @@
 /**
  * Billing, Subscription, Entitlements & Usage API Routes
- * Server-authoritative state management. Client cannot manipulate plan or entitlements directly.
+ * Server-authoritative state management.
+ * - Identity derived EXCLUSIVELY from validated server sessions (requireAuth)
+ * - Ignores all client-supplied user identifiers (x-user-id header, body.userId)
+ * - Returns 401 Unauthorized when unauthenticated — NO silent fallback to default user
  */
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { saasStore, PLANS } from '../storage/saasStore';
 import { getLemonSqueezyConfig } from '../lemonSqueezy/config';
 import { createLemonSqueezyCheckout, getCustomerPortalUrl } from '../lemonSqueezy/client';
+import { requireAuth, AuthenticatedRequest } from '../auth/session';
 import { BillingStateResponse } from '../../types/saas';
 
 export const billingRouter = Router();
 
-// Helper to extract authenticated user
-function getAuthenticatedUser(req: any) {
-  const userId = (req.headers['x-user-id'] as string) || saasStore.getDefaultUser().id;
-  return saasStore.getUser(userId) || saasStore.getDefaultUser();
-}
+// Public plan catalog (no authentication required)
+billingRouter.get('/plans', (_req, res) => {
+  res.json({
+    plans: Object.values(PLANS),
+    lemonSqueezyConfig: getLemonSqueezyConfig(),
+  });
+});
 
-// Full state snapshot for Account/Pricing/Header views
-billingRouter.get('/state', (req, res) => {
-  const user = getAuthenticatedUser(req);
+// Integration status check (public)
+billingRouter.get('/status', (_req, res) => {
+  const config = getLemonSqueezyConfig();
+  res.json({ config });
+});
+
+// --------------------------------------------------------------------------
+// PROTECTED ROUTES: Strictly require valid, signed session authentication
+// --------------------------------------------------------------------------
+
+/**
+ * GET /api/billing/state
+ * Aggregated state snapshot for authenticated user
+ */
+billingRouter.get('/state', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
   const subscription = saasStore.getSubscription(user.id);
   const plan = PLANS[subscription.planId] || PLANS.free;
   const entitlements = saasStore.getEntitlements(user.id);
@@ -37,17 +56,12 @@ billingRouter.get('/state', (req, res) => {
   res.json(response);
 });
 
-// List all plans and their specifications
-billingRouter.get('/plans', (req, res) => {
-  res.json({
-    plans: Object.values(PLANS),
-    lemonSqueezyConfig: getLemonSqueezyConfig(),
-  });
-});
-
-// Current user's subscription
-billingRouter.get('/subscription', (req, res) => {
-  const user = getAuthenticatedUser(req);
+/**
+ * GET /api/billing/subscription or /api/subscription
+ * Authenticated user's active subscription
+ */
+billingRouter.get('/subscription', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
   const subscription = saasStore.getSubscription(user.id);
   const plan = PLANS[subscription.planId] || PLANS.free;
 
@@ -57,23 +71,33 @@ billingRouter.get('/subscription', (req, res) => {
   });
 });
 
-// Entitlement check endpoint
-billingRouter.get('/entitlements', (req, res) => {
-  const user = getAuthenticatedUser(req);
+/**
+ * GET /api/billing/entitlements or /api/entitlements
+ * Authenticated user's active entitlements
+ */
+billingRouter.get('/entitlements', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
   const entitlements = saasStore.getEntitlements(user.id);
   res.json({ entitlements });
 });
 
-// Usage and credits
-billingRouter.get('/usage', (req, res) => {
-  const user = getAuthenticatedUser(req);
+/**
+ * GET /api/billing/usage or /api/usage
+ * Authenticated user's usage and credits
+ */
+billingRouter.get('/usage', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
   const usage = saasStore.getUsage(user.id);
   res.json({ usage });
 });
 
-// Record operation usage / meter event
-billingRouter.post('/usage/record', (req, res) => {
-  const user = getAuthenticatedUser(req);
+/**
+ * POST /api/billing/usage/record or /api/usage/record
+ * Record operation usage for the authenticated user.
+ * Identity is strictly server-authoritative; any body.userId is discarded.
+ */
+billingRouter.post('/usage/record', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
   const { operationType, description, creditsCost } = req.body || {};
 
   const result = saasStore.recordUsage(
@@ -97,9 +121,13 @@ billingRouter.post('/usage/record', (req, res) => {
   });
 });
 
-// Create Lemon Squeezy Checkout
-billingRouter.post('/checkout', async (req, res) => {
-  const user = getAuthenticatedUser(req);
+/**
+ * POST /api/billing/checkout
+ * Create Lemon Squeezy Checkout for the authenticated user.
+ * Target userId is locked to req.user.id.
+ */
+billingRouter.post('/checkout', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
   const { planId = 'pro', redirectUrl } = req.body || {};
 
   const targetPlan = PLANS[planId as 'free' | 'pro'];
@@ -111,7 +139,7 @@ billingRouter.post('/checkout', async (req, res) => {
   }
 
   const result = await createLemonSqueezyCheckout({
-    userId: user.id,
+    userId: user.id, // Strictly server-derived from authenticated session
     userEmail: user.email,
     userName: user.name,
     variantId: targetPlan.lemonSqueezyVariantId || undefined,
@@ -121,9 +149,13 @@ billingRouter.post('/checkout', async (req, res) => {
   res.json(result);
 });
 
-// Get Lemon Squeezy Customer Billing Portal
-billingRouter.get('/portal', async (req, res) => {
-  const user = getAuthenticatedUser(req);
+/**
+ * GET /api/billing/portal
+ * Get Lemon Squeezy Customer Billing Portal for the authenticated user.
+ * Customer ID lookup is strictly bound to req.user.id.
+ */
+billingRouter.get('/portal', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
   const sub = saasStore.getSubscription(user.id);
 
   if (!sub.lemonSqueezyCustomerId) {
@@ -135,10 +167,4 @@ billingRouter.get('/portal', async (req, res) => {
 
   const result = await getCustomerPortalUrl(sub.lemonSqueezyCustomerId);
   res.json(result);
-});
-
-// Check integration status
-billingRouter.get('/status', (req, res) => {
-  const config = getLemonSqueezyConfig();
-  res.json({ config });
 });
