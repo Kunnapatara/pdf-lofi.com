@@ -1,0 +1,6 @@
+{
+  "name": "PDF-LoFi",
+  "description": "Local-first PDF workspace for viewing, organizing, merging, splitting, and rotating PDFs entirely in your browser without uploading documents.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
