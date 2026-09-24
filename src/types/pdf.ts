@@ -32,9 +32,41 @@ export interface SearchMatch {
   textSnippet: string;
 }
 
-export type ActiveTab = 'view' | 'organize' | 'merge' | 'split' | 'tools';
+export type ActiveTab =
+  | 'view'
+  | 'organize'
+  | 'edit'
+  | 'inspect'
+  | 'optimize'
+  | 'ocr'
+  | 'forms'
+  | 'compare'
+  | 'workflows'
+  | 'merge'
+  | 'split'
+  | 'tools';
 
-export type AppView = 'home' | 'merge' | 'split' | 'compress' | 'convert' | 'tools' | 'workspace' | 'organize' | 'viewer' | 'pricing' | 'account';
+export type AppView =
+  | 'home'
+  | 'merge'
+  | 'split'
+  | 'compress'
+  | 'convert'
+  | 'tools'
+  | 'workspace'
+  | 'organize'
+  | 'viewer'
+  | 'pricing'
+  | 'account'
+  | 'edit'
+  | 'page-numbers'
+  | 'watermark'
+  | 'inspect'
+  | 'optimize'
+  | 'ocr'
+  | 'forms'
+  | 'compare'
+  | 'workflows';
 
 export type ToolCategory =
   | 'all'
@@ -44,18 +76,30 @@ export type ToolCategory =
   | 'convert'
   | 'edit'
   | 'security'
-  | 'intelligence';
-
-export type ToolStatus = 'READY' | 'COMING_SOON';
+  | 'utilities';
 
 export interface ToolItem {
+  id?: string;
+  name: string;
+  category: ToolCategory | string;
+  description: string;
+  badge?: string;
+  status: 'READY' | 'BETA' | 'SOON' | string;
+  processingLocation: 'local' | 'cloud' | string;
+  viewKey?: string;
+  actionKey?: string;
+  route?: string;
+  isPro?: boolean;
+  isAvailable?: boolean;
+}
+
+export interface PDFToolDefinition {
   id: string;
   name: string;
   category: ToolCategory;
   description: string;
+  route: string;
   badge?: string;
-  status: ToolStatus;
-  processingLocation: ProcessingLocation;
-  actionKey?: ActiveTab;
-  viewKey?: AppView;
+  isPro?: boolean;
+  isAvailable?: boolean;
 }

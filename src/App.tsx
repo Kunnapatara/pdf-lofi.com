@@ -158,17 +158,19 @@ export default function App() {
   };
 
   // Load built-in 4-page sample PDF
-  const handleLoadSample = async () => {
+  const handleLoadSample = async (targetTab: ActiveTab = 'organize'): Promise<LocalDocument | null> => {
     try {
       const sampleBytes = await generateSamplePdf();
       const doc = await ingestPdf(sampleBytes, 'PDF-LoFi_Sample_Document.pdf');
       if (doc) {
         setCurrentView('workspace');
-        setActiveWorkspaceTab('organize');
+        setActiveWorkspaceTab(targetTab);
+        return doc;
       }
     } catch (err) {
       console.error('Failed generating sample PDF:', err);
     }
+    return null;
   };
 
   // Handle document update from page operations (rotate, delete, duplicate, etc.)
@@ -237,7 +239,7 @@ export default function App() {
         setActiveWorkspaceTab('organize');
       } else {
         // Prompt file load or sample
-        handleLoadSample();
+        handleLoadSample('organize');
       }
       return;
     }
@@ -247,14 +249,84 @@ export default function App() {
         setCurrentView('workspace');
         setActiveWorkspaceTab('view');
       } else {
-        handleLoadSample();
+        handleLoadSample('view');
+      }
+      return;
+    }
+
+    if (view === 'edit' || view === 'page-numbers' || view === 'watermark') {
+      if (currentDocument) {
+        setCurrentView('workspace');
+        setActiveWorkspaceTab('edit');
+      } else {
+        handleLoadSample('edit');
+      }
+      return;
+    }
+
+    if (view === 'compress' || view === 'optimize') {
+      if (currentDocument) {
+        setCurrentView('workspace');
+        setActiveWorkspaceTab('optimize');
+      } else {
+        handleLoadSample('optimize');
+      }
+      return;
+    }
+
+    if (view === 'inspect') {
+      if (currentDocument) {
+        setCurrentView('workspace');
+        setActiveWorkspaceTab('inspect');
+      } else {
+        handleLoadSample('inspect');
+      }
+      return;
+    }
+
+    if (view === 'ocr') {
+      if (currentDocument) {
+        setCurrentView('workspace');
+        setActiveWorkspaceTab('ocr');
+      } else {
+        handleLoadSample('ocr');
+      }
+      return;
+    }
+
+    if (view === 'forms') {
+      if (currentDocument) {
+        setCurrentView('workspace');
+        setActiveWorkspaceTab('forms');
+      } else {
+        handleLoadSample('forms');
+      }
+      return;
+    }
+
+    if (view === 'compare') {
+      if (currentDocument) {
+        setCurrentView('workspace');
+        setActiveWorkspaceTab('compare');
+      } else {
+        handleLoadSample('compare');
+      }
+      return;
+    }
+
+    if (view === 'workflows') {
+      if (currentDocument) {
+        setCurrentView('workspace');
+        setActiveWorkspaceTab('workflows');
+      } else {
+        handleLoadSample('workflows');
       }
       return;
     }
 
     if (view === 'workspace') {
       if (!currentDocument) {
-        handleLoadSample();
+        handleLoadSample('organize');
         return;
       }
     }

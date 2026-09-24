@@ -12,12 +12,21 @@ import {
   Square,
   Sparkles,
   Scissors,
+  ArrowUpDown,
+  ChevronsLeft,
+  ChevronsRight,
+  Crop,
+  Maximize2,
+  FileX,
+  X,
 } from 'lucide-react';
 import { LocalDocument, DocumentPageInfo } from '../../types/pdf';
 import { generatePageThumbnail } from '../../pdf/rendering/thumbnailService';
 import { documentService } from '../../services/documentService';
 import { triggerLocalDownload } from '../../pdf/export/exportService';
 import { ProcessingBadge } from '../../components/status/ProcessingBadge';
+import { CropMargins } from '../../pdf/core/operations/cropOperation';
+import { StandardPageSize } from '../../pdf/core/operations/resizeOperation';
 
 interface OrganizeTabProps {
   document: LocalDocument;
@@ -34,7 +43,16 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [processingMsg, setProcessingMsg] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [draggedPageIndex, setDraggedPageIndex] = useState<number | null>(null);
+
+  // Modals for Crop & Resize
+  const [showCropModal, setShowCropModal] = useState(false);
+  const [cropMargins, setCropMargins] = useState<CropMargins>({ top: 36, bottom: 36, left: 36, right: 36 });
+
+  const [showResizeModal, setShowResizeModal] = useState(false);
+  const [resizePreset, setResizePreset] = useState<StandardPageSize>('a4');
+  const [scaleContent, setScaleContent] = useState(true);
 
   // Initialize page metadata array
   useEffect(() => {
@@ -178,7 +196,7 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
     }
   };
 
-  // Batch Operations
+  // Selection helpers
   const handleToggleSelectPage = (idx: number) => {
     setSelectedPages((prev) =>
       prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
@@ -191,6 +209,16 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
     } else {
       setSelectedPages(Array.from({ length: document.pageCount }, (_, i) => i));
     }
+  };
+
+  const handleSelectOdd = () => {
+    const odds = Array.from({ length: document.pageCount }, (_, i) => i).filter((i) => i % 2 === 0);
+    setSelectedPages(odds);
+  };
+
+  const handleSelectEven = () => {
+    const evens = Array.from({ length: document.pageCount }, (_, i) => i).filter((i) => i % 2 === 1);
+    setSelectedPages(evens);
   };
 
   const handleBatchDelete = async () => {
@@ -232,22 +260,118 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
     }
   };
 
+  const handleReversePages = async () => {
+    if (!document.data || document.pageCount <= 1) return;
+    setIsProcessing(true);
+    setProcessingMsg('Reversing page sequence');
+    setErrorMsg(null);
+    try {
+      const updated = await documentService.reversePages(document);
+      setSelectedPages([]);
+      if (updated.data) {
+        await onUpdateDocumentData(updated.data, updated.pageCount, 'Reverse Pages');
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to reverse pages');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Remove Blank Pages
+  const handleRemoveBlankPages = async () => {
+    if (!document.data) return;
+    setIsProcessing(true);
+    setProcessingMsg('Scanning document for blank pages...');
+    setErrorMsg(null);
+    setSuccessNotice(null);
+
+    try {
+      const { document: updated, removedCount } = await documentService.removeBlankPages(
+        document,
+        (cur, total) => setProcessingMsg(`Scanning page ${cur} of ${total} for blank content...`)
+      );
+
+      if (removedCount === 0) {
+        setSuccessNotice('No blank pages detected. Document is already clean.');
+      } else {
+        setSuccessNotice(`Successfully detected and removed ${removedCount} blank ${removedCount === 1 ? 'page' : 'pages'}.`);
+        if (updated.data) {
+          await onUpdateDocumentData(updated.data, updated.pageCount, `Remove ${removedCount} Blank Pages`);
+        }
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to remove blank pages');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Apply Crop
+  const handleApplyCrop = async () => {
+    if (!document.data) return;
+    setIsProcessing(true);
+    setProcessingMsg('Cropping pages...');
+    setErrorMsg(null);
+    try {
+      const targetIndices = selectedPages.length > 0 ? selectedPages : undefined;
+      const updated = await documentService.cropPages(document, cropMargins, targetIndices);
+      setShowCropModal(false);
+      if (updated.data) {
+        await onUpdateDocumentData(
+          updated.data,
+          updated.pageCount,
+          `Crop ${targetIndices ? targetIndices.length : 'All'} Pages`
+        );
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to crop pages');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Apply Resize
+  const handleApplyResize = async () => {
+    if (!document.data) return;
+    setIsProcessing(true);
+    setProcessingMsg(`Standardizing page dimensions to ${resizePreset.toUpperCase()}...`);
+    setErrorMsg(null);
+    try {
+      const targetIndices = selectedPages.length > 0 ? selectedPages : undefined;
+      const updated = await documentService.resizePages(
+        document,
+        { preset: resizePreset, scaleContent },
+        targetIndices
+      );
+      setShowResizeModal(false);
+      if (updated.data) {
+        await onUpdateDocumentData(
+          updated.data,
+          updated.pageCount,
+          `Resize Pages to ${resizePreset.toUpperCase()}`
+        );
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to resize pages');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleDownloadCurrent = () => {
     if (document.data) {
       triggerLocalDownload(document.data, document.name);
     }
   };
 
-  // Drag and Drop reordering handlers
-  const handleDragStart = (e: React.DragEvent, index: number) => {
-    setDraggedPageIndex(index);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', String(index));
+  const handleDragStart = (e: React.DragEvent, pageIdx: number) => {
+    setDraggedPageIndex(pageIdx);
+    e.dataTransfer.setData('text/plain', pageIdx.toString());
   };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
   };
 
   const handleDropOnPage = (e: React.DragEvent, dropTargetIdx: number) => {
@@ -259,11 +383,11 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 space-y-4">
-      {/* Top Operations Action Card matching QRxMENU Island Toolbar */}
+      {/* Top Operations Action Card */}
       <div className="bg-white rounded-2xl border border-stone-200/90 p-4 shadow-xs space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Left: Selection Controls */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <button
               onClick={handleSelectAll}
               id="btn-select-all"
@@ -283,13 +407,72 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
             </button>
 
             <button
+              onClick={handleSelectOdd}
+              className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all cursor-pointer"
+              title="Select all odd pages (1, 3, 5...)"
+            >
+              Odd Pages
+            </button>
+
+            <button
+              onClick={handleSelectEven}
+              className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all cursor-pointer"
+              title="Select all even pages (2, 4, 6...)"
+            >
+              Even Pages
+            </button>
+
+            <div className="h-4 w-px bg-stone-200 mx-1 hidden sm:block" />
+
+            <button
               onClick={() => handleInsertBlank(document.pageCount)}
               disabled={isProcessing}
               id="btn-add-blank-page"
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5 text-stone-600" />
-              <span>+ Blank Page</span>
+              <span>+ Blank</span>
+            </button>
+
+            <button
+              onClick={handleReversePages}
+              disabled={isProcessing || document.pageCount <= 1}
+              id="btn-reverse-order"
+              title="Invert page order (e.g. 1..N becomes N..1)"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
+            >
+              <ArrowUpDown className="w-3.5 h-3.5 text-stone-600" />
+              <span>Reverse</span>
+            </button>
+
+            <button
+              onClick={handleRemoveBlankPages}
+              disabled={isProcessing}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all cursor-pointer"
+              title="Scan and remove blank spacer pages in browser"
+            >
+              <FileX className="w-3.5 h-3.5 text-stone-600" />
+              <span>Purge Blanks</span>
+            </button>
+
+            <button
+              onClick={() => setShowCropModal(true)}
+              disabled={isProcessing}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all cursor-pointer"
+              title="Crop page margins"
+            >
+              <Crop className="w-3.5 h-3.5 text-stone-600" />
+              <span>Crop</span>
+            </button>
+
+            <button
+              onClick={() => setShowResizeModal(true)}
+              disabled={isProcessing}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all cursor-pointer"
+              title="Standardize page size to A4 or US Letter"
+            >
+              <Maximize2 className="w-3.5 h-3.5 text-stone-600" />
+              <span>Resize</span>
             </button>
           </div>
 
@@ -332,6 +515,16 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
           </button>
         </div>
 
+        {/* Notices */}
+        {successNotice && (
+          <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center justify-between">
+            <span>{successNotice}</span>
+            <button onClick={() => setSuccessNotice(null)} className="text-emerald-600 hover:text-emerald-900 cursor-pointer">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* Processing State Badge */}
         <ProcessingBadge
           state={isProcessing ? 'processing' : errorMsg ? 'error' : document.processingState}
@@ -341,7 +534,7 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
         />
       </div>
 
-      {/* Pages Grid matching QRxMENU Visual Card Archetype */}
+      {/* Pages Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {Array.from({ length: document.pageCount }, (_, idx) => {
           const pageNum = idx + 1;
@@ -361,9 +554,9 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
                   : 'border-stone-200/90 hover:border-orange-300'
               }`}
             >
-              {/* Card Top / Thumbnail area with top-left badge from QRxMENU */}
+              {/* Card Top / Thumbnail area */}
               <div className="relative w-full aspect-[3/4] bg-stone-50 border-b border-stone-100 flex items-center justify-center p-3 overflow-hidden cursor-grab active:cursor-grabbing">
-                {/* QRxMENU Pill Badge: Top Left */}
+                {/* Pill Badge: Top Left */}
                 <div className="absolute top-2.5 left-2.5 z-10">
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-orange-500 text-white shadow-2xs">
                     <Sparkles className="w-2.5 h-2.5" />
@@ -410,17 +603,17 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
                     Page {pageNum} of {document.pageCount}
                   </span>
                   <span className="text-[10px] font-mono text-stone-400">
-                    A4 Portrait
+                    A4
                   </span>
                 </div>
 
-                {/* Reorder and rotation action buttons */}
+                {/* Rotation and cloning actions */}
                 <div className="grid grid-cols-4 gap-1 pt-1">
                   <button
                     onClick={() => handleRotateSingle(idx, -90)}
                     disabled={isProcessing}
                     className="p-1.5 rounded-lg bg-stone-50 hover:bg-orange-50 hover:text-orange-600 border border-stone-200 text-stone-600 transition-all flex items-center justify-center cursor-pointer"
-                    title="Rotate 90° Counter-Clockwise"
+                    title="Rotate 90° CCW"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                   </button>
@@ -429,7 +622,7 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
                     onClick={() => handleRotateSingle(idx, 90)}
                     disabled={isProcessing}
                     className="p-1.5 rounded-lg bg-stone-50 hover:bg-orange-50 hover:text-orange-600 border border-stone-200 text-stone-600 transition-all flex items-center justify-center cursor-pointer"
-                    title="Rotate 90° Clockwise"
+                    title="Rotate 90° CW"
                   >
                     <RotateCw className="w-3.5 h-3.5" />
                   </button>
@@ -453,13 +646,21 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
                   </button>
                 </div>
 
-                {/* Bottom Order Row */}
+                {/* Move Controls: First, Prev, Next, Last */}
                 <div className="flex items-center justify-between pt-2 border-t border-stone-100">
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      onClick={() => handleMovePage(idx, 0)}
+                      disabled={idx === 0 || isProcessing}
+                      className="p-1 rounded-md text-stone-400 hover:text-stone-700 disabled:opacity-20 transition-all cursor-pointer"
+                      title="Move to Start"
+                    >
+                      <ChevronsLeft className="w-3.5 h-3.5" />
+                    </button>
                     <button
                       onClick={() => handleMovePage(idx, idx - 1)}
                       disabled={idx === 0 || isProcessing}
-                      className="p-1 rounded-md text-stone-400 hover:text-stone-700 disabled:opacity-30 transition-all cursor-pointer"
+                      className="p-1 rounded-md text-stone-400 hover:text-stone-700 disabled:opacity-20 transition-all cursor-pointer"
                       title="Move Left"
                     >
                       <ArrowLeft className="w-3.5 h-3.5" />
@@ -467,23 +668,30 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
                     <button
                       onClick={() => handleMovePage(idx, idx + 1)}
                       disabled={idx === document.pageCount - 1 || isProcessing}
-                      className="p-1 rounded-md text-stone-400 hover:text-stone-700 disabled:opacity-30 transition-all cursor-pointer"
+                      className="p-1 rounded-md text-stone-400 hover:text-stone-700 disabled:opacity-20 transition-all cursor-pointer"
                       title="Move Right"
                     >
                       <ArrowRight className="w-3.5 h-3.5" />
                     </button>
+                    <button
+                      onClick={() => handleMovePage(idx, document.pageCount - 1)}
+                      disabled={idx === document.pageCount - 1 || isProcessing}
+                      className="p-1 rounded-md text-stone-400 hover:text-stone-700 disabled:opacity-20 transition-all cursor-pointer"
+                      title="Move to End"
+                    >
+                      <ChevronsRight className="w-3.5 h-3.5" />
+                    </button>
                   </div>
 
-                  {/* QRxMENU bright orange pill button */}
                   <button
                     onClick={() => handleToggleSelectPage(idx)}
-                    className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
                       isSelected
                         ? 'bg-orange-600 text-white'
-                        : 'bg-orange-500 text-white hover:bg-orange-600'
+                        : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
                     }`}
                   >
-                    {isSelected ? '✓ Selected' : '+ Select'}
+                    {isSelected ? '✓ Selected' : 'Select'}
                   </button>
                 </div>
               </div>
@@ -491,6 +699,152 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
           );
         })}
       </div>
+
+      {/* Crop Margins Modal */}
+      {showCropModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl border border-stone-200 p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-stone-100">
+              <div className="flex items-center gap-2">
+                <Crop className="w-5 h-5 text-orange-600" />
+                <h3 className="text-base font-bold text-stone-900">Crop Page Margins</h3>
+              </div>
+              <button onClick={() => setShowCropModal(false)} className="text-stone-400 hover:text-stone-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-500">
+              Set trim margins in points (72 pt = 1 inch). Applies to {selectedPages.length > 0 ? `${selectedPages.length} selected pages` : 'all pages'}.
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <label className="font-semibold text-stone-700">Top Margin (pt)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="200"
+                  value={cropMargins.top}
+                  onChange={(e) => setCropMargins({ ...cropMargins, top: Number(e.target.value) })}
+                  className="w-full mt-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="font-semibold text-stone-700">Bottom Margin (pt)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="200"
+                  value={cropMargins.bottom}
+                  onChange={(e) => setCropMargins({ ...cropMargins, bottom: Number(e.target.value) })}
+                  className="w-full mt-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="font-semibold text-stone-700">Left Margin (pt)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="200"
+                  value={cropMargins.left}
+                  onChange={(e) => setCropMargins({ ...cropMargins, left: Number(e.target.value) })}
+                  className="w-full mt-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="font-semibold text-stone-700">Right Margin (pt)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="200"
+                  value={cropMargins.right}
+                  onChange={(e) => setCropMargins({ ...cropMargins, right: Number(e.target.value) })}
+                  className="w-full mt-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+              <button
+                onClick={() => setShowCropModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApplyCrop}
+                disabled={isProcessing}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
+              >
+                Apply Crop
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Resize / Standardize Modal */}
+      {showResizeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl border border-stone-200 p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-stone-100">
+              <div className="flex items-center gap-2">
+                <Maximize2 className="w-5 h-5 text-orange-600" />
+                <h3 className="text-base font-bold text-stone-900">Standardize Page Size</h3>
+              </div>
+              <button onClick={() => setShowResizeModal(false)} className="text-stone-400 hover:text-stone-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-500">
+              Conform dimensions to standard international print formats. Applies to {selectedPages.length > 0 ? `${selectedPages.length} selected pages` : 'all pages'}.
+            </p>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="font-semibold text-stone-700">Target Standard Format</label>
+                <select
+                  value={resizePreset}
+                  onChange={(e) => setResizePreset(e.target.value as StandardPageSize)}
+                  className="w-full mt-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                >
+                  <option value="a4">A4 (210 × 297 mm / 595 × 842 pt)</option>
+                  <option value="letter">US Letter (8.5 × 11 in / 612 × 792 pt)</option>
+                  <option value="legal">US Legal (8.5 × 14 in / 612 × 1008 pt)</option>
+                </select>
+              </div>
+
+              <label className="flex items-center gap-2 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={scaleContent}
+                  onChange={(e) => setScaleContent(e.target.checked)}
+                  className="rounded border-stone-300 text-orange-600 focus:ring-orange-500"
+                />
+                <span className="font-medium text-stone-700">Scale page contents to fit new dimensions</span>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+              <button
+                onClick={() => setShowResizeModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApplyResize}
+                disabled={isProcessing}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
+              >
+                Standardize Dimensions
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -14,6 +14,29 @@ import {
   executeReorderPages,
   executeExtractPages,
   executeMergePdfs,
+  executeReversePages,
+  executeAddPageNumbers,
+  executeAddTextWatermark,
+  executeCropPages,
+  CropMargins,
+  executeResizePages,
+  ResizeOptions,
+  executeRemoveBlankPages,
+  executeAddStamp,
+  StampOptions,
+  executeInsertImage,
+  InsertImageOptions,
+  executeFillForm,
+  executeClearForm,
+  executeFlattenForm,
+  executeUpdateMetadata,
+  UpdateMetadataOptions,
+  executeSanitizeMetadata,
+  executeCompressPdf,
+  CompressionOptions,
+  CompressionResult,
+  PageNumberOptions,
+  WatermarkOptions,
   OperationResult,
 } from '../pdf/core/operations/index';
 import { pdfWorkerClient } from '../pdf/workers/workerClient';
@@ -118,6 +141,138 @@ export class DocumentService {
       return pdfWorkerClient.runMerge(pdfBytesList);
     }
     return executeMergePdfs(pdfBytesList);
+  }
+
+  async reversePages(document: LocalDocument): Promise<LocalDocument> {
+    return this.safeMutate(document, 'reversePages', (data) =>
+      executeReversePages(data)
+    );
+  }
+
+  async addPageNumbers(
+    document: LocalDocument,
+    options: PageNumberOptions
+  ): Promise<LocalDocument> {
+    return this.safeMutate(document, 'addPageNumbers', (data) =>
+      executeAddPageNumbers(data, options)
+    );
+  }
+
+  async addWatermark(
+    document: LocalDocument,
+    options: WatermarkOptions
+  ): Promise<LocalDocument> {
+    return this.safeMutate(document, 'addWatermark', (data) =>
+      executeAddTextWatermark(data, options)
+    );
+  }
+
+  async cropPages(
+    document: LocalDocument,
+    margins: CropMargins,
+    pageIndices?: number[]
+  ): Promise<LocalDocument> {
+    return this.safeMutate(document, 'cropPages', (data) =>
+      executeCropPages(data, margins, pageIndices)
+    );
+  }
+
+  async resizePages(
+    document: LocalDocument,
+    options: ResizeOptions,
+    pageIndices?: number[]
+  ): Promise<LocalDocument> {
+    return this.safeMutate(document, 'resizePages', (data) =>
+      executeResizePages(data, options, pageIndices)
+    );
+  }
+
+  async removeBlankPages(
+    document: LocalDocument,
+    onProgress?: (current: number, total: number) => void
+  ): Promise<{ document: LocalDocument; removedCount: number }> {
+    if (!document.data) throw new Error('Document has no binary data in memory');
+    const result = await executeRemoveBlankPages(document.data, onProgress);
+    const updatedDoc: LocalDocument = {
+      ...document,
+      data: result.data,
+      pageCount: result.pageCount,
+      size: result.data.byteLength,
+      processingState: 'completed',
+      updatedAt: Date.now(),
+    };
+    return { document: updatedDoc, removedCount: result.removedCount };
+  }
+
+  async addStamp(
+    document: LocalDocument,
+    options: StampOptions
+  ): Promise<LocalDocument> {
+    return this.safeMutate(document, 'addStamp', (data) =>
+      executeAddStamp(data, options)
+    );
+  }
+
+  async insertImage(
+    document: LocalDocument,
+    options: InsertImageOptions
+  ): Promise<LocalDocument> {
+    return this.safeMutate(document, 'insertImage', (data) =>
+      executeInsertImage(data, options)
+    );
+  }
+
+  async fillForm(
+    document: LocalDocument,
+    fieldValues: Record<string, string | boolean>
+  ): Promise<LocalDocument> {
+    return this.safeMutate(document, 'fillForm', (data) =>
+      executeFillForm(data, fieldValues)
+    );
+  }
+
+  async clearForm(document: LocalDocument): Promise<LocalDocument> {
+    return this.safeMutate(document, 'clearForm', (data) =>
+      executeClearForm(data)
+    );
+  }
+
+  async flattenForm(document: LocalDocument): Promise<LocalDocument> {
+    return this.safeMutate(document, 'flattenForm', (data) =>
+      executeFlattenForm(data)
+    );
+  }
+
+  async updateMetadata(
+    document: LocalDocument,
+    updates: UpdateMetadataOptions
+  ): Promise<LocalDocument> {
+    return this.safeMutate(document, 'updateMetadata', (data) =>
+      executeUpdateMetadata(data, updates)
+    );
+  }
+
+  async sanitizeMetadata(document: LocalDocument): Promise<LocalDocument> {
+    return this.safeMutate(document, 'sanitizeMetadata', (data) =>
+      executeSanitizeMetadata(data)
+    );
+  }
+
+  async compressDocument(
+    document: LocalDocument,
+    options?: CompressionOptions
+  ): Promise<{ document: LocalDocument; compressionResult: CompressionResult }> {
+    if (!document.data) throw new Error('Document has no binary data');
+    const compressionResult = await executeCompressPdf(document.data, options);
+    const updatedDoc: LocalDocument = {
+      ...document,
+      data: compressionResult.data,
+      pageCount: compressionResult.pageCount,
+      size: compressionResult.compressedSize,
+      processingState: 'completed',
+      updatedAt: Date.now(),
+    };
+    return { document: updatedDoc, compressionResult };
   }
 }
 

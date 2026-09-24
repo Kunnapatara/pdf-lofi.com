@@ -1,5 +1,18 @@
 import React from 'react';
-import { Layers, Eye, GitMerge, Scissors, Grid, Radio } from 'lucide-react';
+import {
+  Layers,
+  Eye,
+  GitMerge,
+  Scissors,
+  Grid,
+  Stamp,
+  FileText,
+  Zap,
+  Scan,
+  FileCheck,
+  GitCompare,
+  Workflow,
+} from 'lucide-react';
 import { ActiveTab } from '../../types/pdf';
 
 interface CategoryNavProps {
@@ -12,14 +25,19 @@ interface CategoryNavProps {
 export const CategoryNav: React.FC<CategoryNavProps> = ({
   activeTab,
   onSelectTab,
-  hasDocument,
-  onOpenFocusModal,
 }) => {
   const tabs = [
-    { id: 'organize' as ActiveTab, label: 'Organize Pages', icon: <Layers className="w-3.5 h-3.5" /> },
-    { id: 'view' as ActiveTab, label: 'Viewer & Search', icon: <Eye className="w-3.5 h-3.5" /> },
-    { id: 'merge' as ActiveTab, label: 'Merge PDFs', icon: <GitMerge className="w-3.5 h-3.5" /> },
-    { id: 'split' as ActiveTab, label: 'Split & Extract', icon: <Scissors className="w-3.5 h-3.5" /> },
+    { id: 'organize' as ActiveTab, label: 'Organize', icon: <Layers className="w-3.5 h-3.5" /> },
+    { id: 'edit' as ActiveTab, label: 'Edit & Markup', icon: <Stamp className="w-3.5 h-3.5" /> },
+    { id: 'inspect' as ActiveTab, label: 'Inspect', icon: <FileText className="w-3.5 h-3.5" /> },
+    { id: 'optimize' as ActiveTab, label: 'Optimize', icon: <Zap className="w-3.5 h-3.5" /> },
+    { id: 'ocr' as ActiveTab, label: 'OCR', icon: <Scan className="w-3.5 h-3.5" /> },
+    { id: 'forms' as ActiveTab, label: 'Forms', icon: <FileCheck className="w-3.5 h-3.5" /> },
+    { id: 'compare' as ActiveTab, label: 'Compare', icon: <GitCompare className="w-3.5 h-3.5" /> },
+    { id: 'workflows' as ActiveTab, label: 'Workflows', icon: <Workflow className="w-3.5 h-3.5" /> },
+    { id: 'view' as ActiveTab, label: 'Viewer', icon: <Eye className="w-3.5 h-3.5" /> },
+    { id: 'merge' as ActiveTab, label: 'Merge', icon: <GitMerge className="w-3.5 h-3.5" /> },
+    { id: 'split' as ActiveTab, label: 'Split', icon: <Scissors className="w-3.5 h-3.5" /> },
     { id: 'tools' as ActiveTab, label: 'All Tools', icon: <Grid className="w-3.5 h-3.5" /> },
   ];
 
@@ -34,7 +52,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
               <button
                 key={tab.id}
                 onClick={() => onSelectTab(tab.id)}
-                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                   isActive
                     ? 'bg-orange-500 text-white shadow-xs shadow-orange-500/30'
                     : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'

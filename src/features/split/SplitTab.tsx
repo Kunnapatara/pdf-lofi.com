@@ -4,6 +4,7 @@ import { LocalDocument } from '../../types/pdf';
 import { documentService } from '../../services/documentService';
 import { triggerLocalDownload } from '../../pdf/export/exportService';
 import { ProcessingBadge } from '../../components/status/ProcessingBadge';
+import { parsePageRange } from '../../pdf/core/operations/rangeParser';
 
 interface SplitTabProps {
   document: LocalDocument;
@@ -20,43 +21,13 @@ export const SplitTab: React.FC<SplitTabProps> = ({ document }) => {
   } | null>(null);
 
   const totalPages = document.pageCount;
-
-  // Parses ranges like "1-3, 5, 7-8" into sorted unique 0-indexed page indices
-  const parsePageIndices = (input: string, maxPages: number): number[] => {
-    const parts = input.split(',').map((p) => p.trim()).filter(Boolean);
-    const indices = new Set<number>();
-
-    for (const part of parts) {
-      if (part.includes('-')) {
-        const [startStr, endStr] = part.split('-').map((s) => s.trim());
-        const start = parseInt(startStr, 10);
-        const end = parseInt(endStr, 10);
-        if (!isNaN(start) && !isNaN(end)) {
-          const low = Math.min(start, end);
-          const high = Math.max(start, end);
-          for (let i = low; i <= high; i++) {
-            if (i >= 1 && i <= maxPages) {
-              indices.add(i - 1);
-            }
-          }
-        }
-      } else {
-        const single = parseInt(part, 10);
-        if (!isNaN(single) && single >= 1 && single <= maxPages) {
-          indices.add(single - 1);
-        }
-      }
-    }
-
-    return Array.from(indices).sort((a, b) => a - b);
-  };
-
-  const parsedIndices = parsePageIndices(rangeInput, totalPages);
+  const parseResult = parsePageRange(rangeInput, totalPages);
+  const parsedIndices = parseResult.pageIndices;
 
   const handleExtractRange = async () => {
     if (!document.data) return;
-    if (parsedIndices.length === 0) {
-      setErrorMsg(`Please specify valid page numbers within range 1 to ${totalPages}.`);
+    if (!parseResult.valid || parsedIndices.length === 0) {
+      setErrorMsg(parseResult.error || `Please specify valid page numbers within range 1 to ${totalPages}.`);
       return;
     }
 
@@ -168,9 +139,19 @@ export const SplitTab: React.FC<SplitTabProps> = ({ document }) => {
 
         {/* Live Preview of Selected Pages */}
         <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200/80 space-y-2">
-          <div className="text-xs font-bold text-stone-700">
-            Preview: {parsedIndices.length} {parsedIndices.length === 1 ? 'page' : 'pages'} will be extracted
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-bold text-stone-700">
+              Selection: {parseResult.displaySummary}
+            </span>
+            <span className="font-medium text-stone-500">
+              {parsedIndices.length} of {totalPages} pages selected
+            </span>
           </div>
+          {parseResult.error && (
+            <div className="text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-200/80 rounded-xl p-2.5">
+              {parseResult.error}
+            </div>
+          )}
           <div className="flex flex-wrap gap-1.5">
             {parsedIndices.map((idx) => (
               <span
@@ -180,7 +161,7 @@ export const SplitTab: React.FC<SplitTabProps> = ({ document }) => {
                 Page {idx + 1}
               </span>
             ))}
-            {parsedIndices.length === 0 && (
+            {parsedIndices.length === 0 && !parseResult.error && (
               <span className="text-xs text-stone-400 italic">No valid pages selected</span>
             )}
           </div>

@@ -5,7 +5,7 @@
  * Strict Rules:
  * - No fake tools or fake claims.
  * - Every "available" tool routes to an actual implemented processing surface.
- * - Categories: 'organize' | 'optimize' | 'convert' | 'edit' | 'security' | 'intelligence'
+ * - Categories: 'organize' | 'optimize' | 'convert' | 'edit' | 'security' | 'intelligence' | 'workflows'
  * - Status: 'available' | 'coming_soon'
  * - Clearly demarcates local processing vs server-side state.
  */
@@ -25,6 +25,17 @@ import {
   Lock,
   ScanText,
   Binary,
+  Stamp,
+  ArrowUpDown,
+  Crop,
+  Maximize2,
+  FileX,
+  FileText,
+  Wrench,
+  FileCheck,
+  GitCompare,
+  Workflow,
+  PenTool,
 } from 'lucide-react';
 import { AppView, ActiveTab } from '../../types/pdf';
 
@@ -34,7 +45,8 @@ export type ToolCategory =
   | 'convert'
   | 'edit'
   | 'security'
-  | 'intelligence';
+  | 'intelligence'
+  | 'workflows';
 
 export type ToolStatus = 'available' | 'coming_soon';
 
@@ -53,7 +65,7 @@ export interface CanonicalPdfTool {
 }
 
 export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
-  // --- Category: Organize (All Available & Working) ---
+  // --- Category: Organize ---
   {
     id: 'merge-pdf',
     name: 'Merge PDF',
@@ -62,6 +74,7 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     status: 'available',
     processingLocation: 'local',
     routeView: 'merge',
+    workspaceTab: 'merge',
     keywords: ['merge', 'combine', 'join', 'append', 'bind', 'collate', 'batch'],
   },
   {
@@ -72,6 +85,7 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     status: 'available',
     processingLocation: 'local',
     routeView: 'split',
+    workspaceTab: 'split',
     keywords: ['split', 'extract', 'range', 'cut', 'separate', 'pages'],
   },
   {
@@ -129,8 +143,109 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     workspaceTab: 'organize',
     keywords: ['blank', 'insert', 'add page', 'spacer', 'empty page'],
   },
+  {
+    id: 'reverse-pdf',
+    name: 'Reverse Pages',
+    shortDescription: 'Invert the page sequence of your PDF document from end to beginning.',
+    category: 'organize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'organize',
+    workspaceTab: 'organize',
+    keywords: ['reverse', 'invert', 'flip', 'order', 'backward', 'sequence'],
+  },
+  {
+    id: 'crop-pdf',
+    name: 'Crop Margins',
+    shortDescription: 'Trim unwanted white space and margins across document pages.',
+    category: 'organize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'organize',
+    workspaceTab: 'organize',
+    keywords: ['crop', 'margins', 'trim', 'cut', 'box', 'border'],
+  },
+  {
+    id: 'resize-pdf',
+    name: 'Standardize Page Size',
+    shortDescription: 'Resize document pages to standard international formats like A4 or Letter.',
+    category: 'organize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'organize',
+    workspaceTab: 'organize',
+    keywords: ['resize', 'dimensions', 'a4', 'letter', 'standardize', 'format'],
+  },
+  {
+    id: 'purge-blank-pages',
+    name: 'Purge Blank Pages',
+    shortDescription: 'Scan and automatically detect and remove blank scanner pages.',
+    category: 'organize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'organize',
+    workspaceTab: 'organize',
+    keywords: ['blank', 'purge', 'scanner', 'empty', 'clean', 'auto delete'],
+  },
 
-  // --- Category: Intelligence (Viewer & Search is Available & Working) ---
+  // --- Category: Edit & Markup ---
+  {
+    id: 'page-numbers',
+    name: 'Page Numbers',
+    shortDescription: 'Insert sequential page numbers into headers or footers with customizable format and margins.',
+    category: 'edit',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'page-numbers',
+    workspaceTab: 'edit',
+    keywords: ['numbers', 'pagination', 'header', 'footer', 'stamp', 'numbering', 'page counter'],
+  },
+  {
+    id: 'watermark-pdf',
+    name: 'Watermark PDF',
+    shortDescription: 'Overlay customizable security stamps and text watermarks with opacity and angle controls.',
+    category: 'edit',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'watermark',
+    workspaceTab: 'edit',
+    keywords: ['watermark', 'stamp', 'confidential', 'draft', 'overlay', 'security', 'brand'],
+  },
+  {
+    id: 'stamps-pdf',
+    name: 'Document Stamps',
+    shortDescription: 'Stamp official office badges like APPROVED, DRAFT, CONFIDENTIAL, or REVIEWED with dates.',
+    category: 'edit',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'edit',
+    workspaceTab: 'edit',
+    keywords: ['stamp', 'approved', 'draft', 'reviewed', 'confidential', 'badge'],
+  },
+  {
+    id: 'signature-pdf',
+    name: 'Signature Image',
+    shortDescription: 'Draw or upload an electronic signature image and place it onto document pages.',
+    category: 'edit',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'edit',
+    workspaceTab: 'edit',
+    keywords: ['sign', 'signature', 'draw', 'sign pdf', 'e-sign', 'image signature'],
+  },
+  {
+    id: 'insert-image',
+    name: 'Insert Image / Logo',
+    shortDescription: 'Place corporate logos, graphics, or diagrams onto document pages.',
+    category: 'edit',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'edit',
+    workspaceTab: 'edit',
+    keywords: ['image', 'logo', 'insert', 'graphic', 'diagram', 'overlay'],
+  },
+
+  // --- Category: Intelligence & Inspection ---
   {
     id: 'viewer-search',
     name: 'Viewer & Search',
@@ -142,60 +257,86 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     workspaceTab: 'view',
     keywords: ['viewer', 'read', 'search', 'find', 'preview', 'zoom', 'thumbnail'],
   },
+  {
+    id: 'inspect-pdf',
+    name: 'Inspect & Metadata',
+    shortDescription: 'Examine PDF version, page geometry, embedded fonts, and edit or sanitize metadata.',
+    category: 'intelligence',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'inspect',
+    workspaceTab: 'inspect',
+    keywords: ['inspect', 'metadata', 'properties', 'fonts', 'structure', 'sanitize', 'version'],
+  },
+  {
+    id: 'ocr-pdf',
+    name: 'OCR Recognition',
+    shortDescription: 'Browser-based Tesseract OCR engine to extract selectable text and embed searchable layers.',
+    category: 'intelligence',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'ocr',
+    workspaceTab: 'ocr',
+    keywords: ['ocr', 'scanned', 'text recognition', 'tesseract', 'extract text', 'searchable'],
+  },
 
-  // --- Category: Optimize (Upcoming local engine) ---
+  // --- Category: Optimize & Security ---
   {
     id: 'compress-pdf',
     name: 'Compress PDF',
-    shortDescription: 'Upcoming client-side stream optimizer to reduce PDF size without cloud upload.',
+    shortDescription: 'Client-side Flate stream optimizer to reduce file size without network transfer.',
     category: 'optimize',
-    status: 'coming_soon',
+    status: 'available',
     processingLocation: 'local',
-    keywords: ['compress', 'reduce size', 'optimize', 'shrink', 'smaller'],
+    routeView: 'optimize',
+    workspaceTab: 'optimize',
+    keywords: ['compress', 'reduce size', 'optimize', 'shrink', 'smaller', 'flate'],
   },
-
-  // --- Category: Convert (Upcoming local image rasterizer) ---
   {
-    id: 'convert-pdf',
-    name: 'Convert PDF',
-    shortDescription: 'Upcoming in-browser rasterizer to convert PDF pages into PNG or JPG images.',
-    category: 'convert',
-    status: 'coming_soon',
-    processingLocation: 'local',
-    keywords: ['convert', 'image', 'png', 'jpg', 'raster', 'export images'],
-  },
-
-  // --- Category: Security (Upcoming client-side encryption) ---
-  {
-    id: 'protect-pdf',
-    name: 'Protect PDF',
-    shortDescription: 'Upcoming standard password protection and permissions encryption.',
+    id: 'repair-pdf',
+    name: 'Repair PDF Structure',
+    shortDescription: 'Reconstruct corrupted cross-reference tables and fix orphaned indirect object trees.',
     category: 'security',
-    status: 'coming_soon',
+    status: 'available',
     processingLocation: 'local',
-    keywords: ['protect', 'password', 'encrypt', 'lock', 'security'],
+    routeView: 'optimize',
+    workspaceTab: 'optimize',
+    keywords: ['repair', 'fix', 'corrupt', 'xref', 'rebuild', 'damaged'],
   },
 
-  // --- Category: Edit (Upcoming annotation tool) ---
+  // --- Category: Forms, Compare & Workflows ---
   {
-    id: 'page-numbers',
-    name: 'Page Numbers',
-    shortDescription: 'Upcoming client-side header and footer sequential page number stamper.',
+    id: 'forms-pdf',
+    name: 'PDF Forms & Flatten',
+    shortDescription: 'Fill interactive AcroForm fields and flatten widgets into permanent static vectors.',
     category: 'edit',
-    status: 'coming_soon',
+    status: 'available',
     processingLocation: 'local',
-    keywords: ['numbers', 'pagination', 'header', 'footer', 'stamp'],
+    routeView: 'forms',
+    workspaceTab: 'forms',
+    keywords: ['forms', 'acroforms', 'fill', 'flatten', 'checkbox', 'fields', 'lock'],
   },
-
-  // --- Category: Intelligence (Upcoming in-browser OCR) ---
   {
-    id: 'ocr-pdf',
-    name: 'OCR PDF',
-    shortDescription: 'Upcoming browser-based OCR engine to extract selectable text from scans.',
+    id: 'compare-pdf',
+    name: 'Compare Documents',
+    shortDescription: 'Visual and textual diff comparison between two PDF document versions in-browser.',
     category: 'intelligence',
-    status: 'coming_soon',
+    status: 'available',
     processingLocation: 'local',
-    keywords: ['ocr', 'scanned', 'text recognition', 'tesseract', 'extract text'],
+    routeView: 'compare',
+    workspaceTab: 'compare',
+    keywords: ['compare', 'diff', 'versions', 'revisions', 'changes', 'text diff'],
+  },
+  {
+    id: 'workflow-pdf',
+    name: 'Pipeline Automation',
+    shortDescription: 'Compose and execute multi-step automated local workflows on documents.',
+    category: 'workflows',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'workflows',
+    workspaceTab: 'workflows',
+    keywords: ['workflow', 'pipeline', 'batch', 'automate', 'sequence', 'chain'],
   },
 ];
 
@@ -212,6 +353,7 @@ export function getToolIcon(id: string, className = 'w-6 h-6'): React.ReactNode 
     case 'merge-pdf':
       return React.createElement(GitMerge, { className });
     case 'split-pdf':
+    case 'extract-pages':
       return React.createElement(Scissors, { className });
     case 'organize-pdf':
       return React.createElement(Layers, { className });
@@ -223,18 +365,42 @@ export function getToolIcon(id: string, className = 'w-6 h-6'): React.ReactNode 
       return React.createElement(Copy, { className });
     case 'insert-blank-page':
       return React.createElement(FilePlus2, { className });
+    case 'reverse-pdf':
+      return React.createElement(ArrowUpDown, { className });
+    case 'crop-pdf':
+      return React.createElement(Crop, { className });
+    case 'resize-pdf':
+      return React.createElement(Maximize2, { className });
+    case 'purge-blank-pages':
+      return React.createElement(FileX, { className });
     case 'viewer-search':
       return React.createElement(Search, { className });
     case 'compress-pdf':
       return React.createElement(Minimize2, { className });
-    case 'convert-pdf':
-      return React.createElement(FileImage, { className });
+    case 'repair-pdf':
+      return React.createElement(Wrench, { className });
     case 'protect-pdf':
       return React.createElement(Lock, { className });
     case 'page-numbers':
       return React.createElement(Binary, { className });
+    case 'watermark-pdf':
+      return React.createElement(Stamp, { className });
+    case 'stamps-pdf':
+      return React.createElement(Stamp, { className });
+    case 'signature-pdf':
+      return React.createElement(PenTool, { className });
+    case 'insert-image':
+      return React.createElement(FileImage, { className });
+    case 'inspect-pdf':
+      return React.createElement(FileText, { className });
     case 'ocr-pdf':
       return React.createElement(ScanText, { className });
+    case 'forms-pdf':
+      return React.createElement(FileCheck, { className });
+    case 'compare-pdf':
+      return React.createElement(GitCompare, { className });
+    case 'workflow-pdf':
+      return React.createElement(Workflow, { className });
     default:
       return React.createElement(Layers, { className });
   }

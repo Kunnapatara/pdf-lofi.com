@@ -3,8 +3,9 @@
  * All document bytes remain on the user's device in browser storage.
  */
 export const DB_NAME = 'pdf_lofi_db';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 export const STORE_NAME = 'documents';
+export const WORKFLOWS_STORE = 'workflows';
 
 export function openLocalDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -20,6 +21,10 @@ export function openLocalDatabase(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
         store.createIndex('updatedAt', 'updatedAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(WORKFLOWS_STORE)) {
+        const workflowStore = db.createObjectStore(WORKFLOWS_STORE, { keyPath: 'id' });
+        workflowStore.createIndex('updatedAt', 'updatedAt', { unique: false });
       }
     };
 

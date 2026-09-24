@@ -14,6 +14,7 @@ import { LocalDocument } from '../../types/pdf';
 import { documentService } from '../../services/documentService';
 import { triggerLocalDownload } from '../../pdf/export/exportService';
 import { generateSamplePdf } from '../../pdf/samplePdf';
+import { parsePageRange } from '../../pdf/core/operations/rangeParser';
 
 interface SplitToolViewProps {
   document: LocalDocument | null;
@@ -41,39 +42,8 @@ export const SplitToolView: React.FC<SplitToolViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const totalPages = document ? document.pageCount : 0;
-
-  // Parses ranges like "1-3, 5" into 0-indexed page indices
-  const parsePageIndices = (input: string, maxPages: number): number[] => {
-    if (maxPages === 0) return [];
-    const parts = input.split(',').map((p) => p.trim()).filter(Boolean);
-    const indices = new Set<number>();
-
-    for (const part of parts) {
-      if (part.includes('-')) {
-        const [startStr, endStr] = part.split('-').map((s) => s.trim());
-        const start = parseInt(startStr, 10);
-        const end = parseInt(endStr, 10);
-        if (!isNaN(start) && !isNaN(end)) {
-          const low = Math.min(start, end);
-          const high = Math.max(start, end);
-          for (let i = low; i <= high; i++) {
-            if (i >= 1 && i <= maxPages) {
-              indices.add(i - 1);
-            }
-          }
-        }
-      } else {
-        const single = parseInt(part, 10);
-        if (!isNaN(single) && single >= 1 && single <= maxPages) {
-          indices.add(single - 1);
-        }
-      }
-    }
-
-    return Array.from(indices).sort((a, b) => a - b);
-  };
-
-  const parsedIndices = parsePageIndices(rangeInput, totalPages);
+  const parseResult = parsePageRange(rangeInput, totalPages);
+  const parsedIndices = parseResult.pageIndices;
 
   const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -134,8 +104,8 @@ export const SplitToolView: React.FC<SplitToolViewProps> = ({
 
   const handleExtractRange = async () => {
     if (!document || !document.data) return;
-    if (parsedIndices.length === 0) {
-      setErrorMsg(`Please specify valid page numbers within range 1 to ${totalPages}.`);
+    if (!parseResult.valid || parsedIndices.length === 0) {
+      setErrorMsg(parseResult.error || `Please specify valid page numbers within range 1 to ${totalPages}.`);
       return;
     }
 
@@ -348,6 +318,19 @@ export const SplitToolView: React.FC<SplitToolViewProps> = ({
                     All Pages (1-{totalPages})
                   </button>
                 </>
+              )}
+            </div>
+
+            {/* Live Range Feedback */}
+            <div className="p-3 rounded-xl bg-stone-50 border border-stone-200/80 space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-stone-700">Selection: {parseResult.displaySummary}</span>
+                <span className="font-medium text-stone-500">{parsedIndices.length} of {totalPages} pages</span>
+              </div>
+              {parseResult.error && (
+                <div className="text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-200/80 rounded-lg p-2">
+                  {parseResult.error}
+                </div>
               )}
             </div>
           </div>

@@ -35,6 +35,7 @@ import {
 import { ToolItem } from '../../types/pdf';
 
 export interface ToolDefinition extends ToolItem {
+  id: string;
   icon: React.ReactNode;
 }
 

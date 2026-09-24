@@ -3,16 +3,22 @@ import {
   FileText,
   HardDrive,
   RefreshCw,
-  Headphones,
   Play,
   X,
 } from 'lucide-react';
 import { LocalDocument, ActiveTab, AppView } from '../../types/pdf';
 import { CategoryNav } from '../../components/CategoryNav';
 import { ViewerTab } from './ViewerTab';
-import { OrganizeTab } from './OrganizeTab';
+import { OrganizeTab } from '../organize/OrganizeTab';
+import { EditTab } from '../edit/EditTab';
 import { MergeTab } from './MergeTab';
 import { SplitTab } from './SplitTab';
+import { InspectTab } from '../inspect/InspectTab';
+import { OptimizeTab } from '../optimize/OptimizeTab';
+import { OcrTab } from '../ocr/OcrTab';
+import { FormsTab } from '../forms/FormsTab';
+import { CompareTab } from '../compare/CompareTab';
+import { WorkflowTab } from '../workflows/WorkflowTab';
 import { ToolsDirectory } from '../tools/ToolsDirectory';
 import { FOCUS_TRACKS, FocusTrack } from '../focus/WorkFocusModal';
 
@@ -103,7 +109,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         </div>
       </div>
 
-      {/* Section 14: PDF-First UX Post-Ingestion Decision (Optional enhancement) */}
+      {/* Post-Ingestion Focus Prompt */}
       {!isFocusActive && !dismissFocusPrompt && (
         <div className="w-full max-w-6xl mx-auto px-4 sm:px-6">
           <div className="bg-white rounded-3xl border border-orange-200/80 p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center md:justify-between gap-4 animate-in fade-in">
@@ -114,7 +120,6 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 <span className="text-xs text-stone-500">Choose your focus sound (optional):</span>
               </div>
 
-              {/* Track Choice Pills */}
               <div className="flex items-center gap-2 flex-wrap">
                 {FOCUS_TRACKS.map((track) => (
                   <button
@@ -164,17 +169,63 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 
       {/* Main Tab Content */}
       <main className="w-full">
-        {activeTab === 'view' && (
-          <ViewerTab
-            document={currentDocument}
-            onSelectOrganize={() => onSelectTab('organize')}
-          />
-        )}
-
         {activeTab === 'organize' && (
           <OrganizeTab
             document={currentDocument}
             onUpdateDocumentData={onUpdateDocumentData}
+          />
+        )}
+
+        {activeTab === 'edit' && (
+          <EditTab
+            document={currentDocument}
+            onUpdateDocumentData={onUpdateDocumentData}
+          />
+        )}
+
+        {activeTab === 'inspect' && (
+          <InspectTab
+            document={currentDocument}
+            onUpdateDocumentData={onUpdateDocumentData}
+          />
+        )}
+
+        {activeTab === 'optimize' && (
+          <OptimizeTab
+            document={currentDocument}
+            onUpdateDocumentData={onUpdateDocumentData}
+          />
+        )}
+
+        {activeTab === 'ocr' && (
+          <OcrTab
+            document={currentDocument}
+            onUpdateDocumentData={onUpdateDocumentData}
+          />
+        )}
+
+        {activeTab === 'forms' && (
+          <FormsTab
+            document={currentDocument}
+            onUpdateDocumentData={onUpdateDocumentData}
+          />
+        )}
+
+        {activeTab === 'compare' && (
+          <CompareTab document={currentDocument} />
+        )}
+
+        {activeTab === 'workflows' && (
+          <WorkflowTab
+            document={currentDocument}
+            onUpdateDocumentData={onUpdateDocumentData}
+          />
+        )}
+
+        {activeTab === 'view' && (
+          <ViewerTab
+            document={currentDocument}
+            onSelectOrganize={() => onSelectTab('organize')}
           />
         )}
 
