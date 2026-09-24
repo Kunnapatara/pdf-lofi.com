@@ -304,20 +304,27 @@ export const OcrTab: React.FC<OcrTabProps> = ({
             )}
           </div>
 
-          {ocrResult && (
-            <div className="pt-4 border-t border-stone-100 flex items-center justify-between">
-              <span className="text-xs text-stone-500">
-                Embed text layer to make this PDF selectable and searchable.
-              </span>
-              <button
-                onClick={handleEmbedTextLayer}
-                disabled={isProcessing}
-                className="px-4 py-2 rounded-full text-xs font-bold bg-stone-900 hover:bg-stone-800 text-white cursor-pointer"
-              >
-                Embed Searchable PDF Layer
-              </button>
-            </div>
-          )}
+            {ocrResult && (
+              <div className="pt-4 border-t border-stone-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <span className="text-xs text-stone-600 block">
+                    Embed text layer to make this PDF selectable and searchable.
+                  </span>
+                  {(selectedLang === 'chi_sim' || selectedLang === 'jpn') && (
+                    <span className="text-[11px] text-amber-700 font-medium block">
+                      Note: Searchable PDF embedding currently supports Latin scripts. CJK text layer embedding is in development (Roadmap).
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={handleEmbedTextLayer}
+                  disabled={isProcessing}
+                  className="px-4 py-2 rounded-full text-xs font-bold bg-stone-900 hover:bg-stone-800 text-white cursor-pointer shrink-0"
+                >
+                  Embed Searchable PDF Layer
+                </button>
+              </div>
+            )}
         </div>
       </div>
     </div>

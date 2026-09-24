@@ -271,7 +271,7 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
   {
     id: 'ocr-pdf',
     name: 'OCR Text Recognition',
-    shortDescription: 'In-browser Tesseract OCR to extract selectable text and embed searchable layers (Latin/ASCII with UTF-8 export).',
+    shortDescription: 'In-browser Tesseract OCR text extraction (UTF-8 multi-language) with searchable PDF layer embedding for Latin scripts.',
     category: 'intelligence',
     status: 'available',
     processingLocation: 'local',

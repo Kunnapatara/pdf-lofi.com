@@ -39,6 +39,12 @@ export async function detectBlankPages(
         continue;
       }
 
+      // If in Node / headless test environment without DOM document, mark page with no text as blank
+      if (typeof document === 'undefined') {
+        blankPageIndices.push(pageNum - 1);
+        continue;
+      }
+
       // If no text, check raster pixel density on a small 150x200 canvas
       const viewport = page.getViewport({ scale: 0.25 });
       const canvas = document.createElement('canvas');

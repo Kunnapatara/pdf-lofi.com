@@ -150,9 +150,9 @@ export async function embedOcrTextLayer(
 
     for (const line of lines) {
       if (curY < 30) break;
-      const cleanLine = line.replace(/[^\x20-\x7E]/g, ' ').substring(0, 100);
+      const lineToDraw = line.substring(0, 120);
       try {
-        page.drawText(cleanLine, {
+        page.drawText(lineToDraw, {
           x: 40,
           y: curY,
           size: 9,
@@ -161,7 +161,8 @@ export async function embedOcrTextLayer(
           opacity: 0.01, // Invisible selectable text layer
         });
       } catch {
-        // Ignore character encoding errors for exotic glyphs
+        // Glyphs outside Latin WinAnsi encoding (such as CJK) cannot be encoded
+        // by standard Type 1 Helvetica fonts without full CID font subsetting.
       }
       curY -= 12;
     }
