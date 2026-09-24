@@ -115,7 +115,7 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
           Simple, Fair Plans for PDF Artisans
         </h1>
         <p className="text-sm text-stone-600 leading-relaxed">
-          Local-first operations are always free and unlimited. Support continuous development, extended file sizes, and unlock cloud/AI processing allowances with Pro.
+          Standard local-first operations are free within generous size thresholds. Upgrade to Pro for high-capacity batch merges, large file sizes up to 500 MB, and advanced productivity limits.
         </p>
       </div>
 

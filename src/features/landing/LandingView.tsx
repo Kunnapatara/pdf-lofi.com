@@ -389,10 +389,10 @@ export const LandingView: React.FC<LandingViewProps> = ({
               <span>Transparent Tier Boundaries</span>
             </div>
             <h3 className="text-base sm:text-lg font-bold text-stone-900">
-              Free forever for local work. Pro for high-capacity batching.
+              Generous Free Tier for local work. Pro for high-capacity batching.
             </h3>
             <p className="text-xs text-stone-500 leading-relaxed">
-              Standard local processing (Merge up to 5 files, Split, Organize, Rotate, Delete) is always free and uncapped. Pro unlocks heavy file sizes up to 500 MB and 50-file batch merges.
+              Standard local processing (Merge up to 5 files, Split, Organize, Rotate, Delete, Viewer) includes generous free usage limits. Pro unlocks heavy file sizes up to 500 MB and 50-file batch merges.
             </p>
           </div>
 

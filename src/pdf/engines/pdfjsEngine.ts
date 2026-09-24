@@ -5,6 +5,21 @@
  */
 import * as pdfjsLib from 'pdfjs-dist';
 
+// Ensure Uint8Array.prototype.toHex and Promise.try are defined across all execution runtimes
+if (typeof (Promise as any).try !== 'function') {
+  (Promise as any).try = function <T>(fn: (...args: any[]) => T, ...args: any[]): Promise<T> {
+    return new Promise((resolve) => resolve(fn(...args)));
+  };
+}
+
+if (typeof (Uint8Array.prototype as any).toHex !== 'function') {
+  (Uint8Array.prototype as any).toHex = function (): string {
+    return Array.from(this as Iterable<number>)
+      .map((b: number) => b.toString(16).padStart(2, '0'))
+      .join('');
+  };
+}
+
 // Worker configuration
 if (typeof window !== 'undefined') {
   try {

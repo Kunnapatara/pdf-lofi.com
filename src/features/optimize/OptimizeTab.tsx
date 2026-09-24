@@ -87,30 +87,6 @@ export const OptimizeTab: React.FC<OptimizeTabProps> = ({
     triggerLocalDownload(compressionResult.data, cleanName);
   };
 
-  // Structural Repair Operation
-  const handleRepairDocument = async () => {
-    if (!document.data) return;
-    setIsProcessing(true);
-    setProcessingMsg('Rebuilding cross-reference tables and indirect object trees...');
-    setErrorMsg(null);
-    setSuccessBanner(null);
-
-    try {
-      // Re-save with clean cross-references through documentService
-      const { compressionResult: res } = await documentService.compressDocument(document, {
-        stripMetadata: false,
-        compressStreams: true,
-      });
-
-      await onUpdateDocumentData(res.data, res.pageCount, 'Repair PDF Structure');
-      setSuccessBanner('Reconstructed cross-reference tables and normalized document tree.');
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'PDF repair failed');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
   return (
     <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 space-y-6">
       {/* Top Header */}
@@ -206,10 +182,20 @@ export const OptimizeTab: React.FC<OptimizeTabProps> = ({
             <div className="mt-4 p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-3 animate-in fade-in">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-stone-800">Optimization Analysis</span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                  {compressionResult.percentageSaved}% Saved
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  compressionResult.percentageSaved > 0
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-stone-200 text-stone-700'
+                }`}>
+                  {compressionResult.percentageSaved > 0 ? `${compressionResult.percentageSaved}% Saved` : 'Fully Optimized'}
                 </span>
               </div>
+
+              {compressionResult.percentageSaved <= 0 && (
+                <div className="p-2.5 bg-stone-100 border border-stone-200 rounded-xl text-[11px] text-stone-600">
+                  Streams are already compactly encoded. No further stream reduction was achievable without lossy raster image downsampling.
+                </div>
+              )}
 
               <div className="grid grid-cols-3 gap-2 text-center text-xs">
                 <div className="p-2 bg-white rounded-xl border border-stone-100">
@@ -245,50 +231,52 @@ export const OptimizeTab: React.FC<OptimizeTabProps> = ({
           )}
         </div>
 
-        {/* Right: Structural Repair & Integrity */}
+        {/* Right: Structural Repair (Truthful Roadmap) */}
         <div className="lg:col-span-5 bg-white rounded-3xl border border-stone-200/90 p-6 shadow-xs space-y-5 flex flex-col justify-between">
           <div className="space-y-4">
-            <div className="border-b border-stone-100 pb-3">
+            <div className="border-b border-stone-100 pb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Wrench className="w-4 h-4 text-orange-600" />
-                <h3 className="text-base font-bold text-stone-900">Structural Repair & Sanitization</h3>
+                <Wrench className="w-4 h-4 text-stone-400" />
+                <h3 className="text-base font-bold text-stone-900">Deep PDF Repair Engine</h3>
               </div>
-              <p className="text-xs text-stone-500 mt-1">
-                Repairs corrupted cross-reference tables and fixes orphaned indirect object pointers.
-              </p>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-100 text-stone-600 border border-stone-200">
+                Roadmap
+              </span>
             </div>
 
-            <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-2xl text-[11px] text-amber-900 space-y-1">
-              <div className="font-bold flex items-center gap-1.5 text-amber-800">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                <span>Structural Integrity Boundary</span>
+            <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl text-[11px] text-stone-600 space-y-2">
+              <div className="font-bold flex items-center gap-1.5 text-stone-800">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>Engine Verification Notice</span>
               </div>
               <p>
-                This operation reconstructs the internal PDF document catalog and serializes clean cross-reference streams.
-                It fixes damaged header offsets and dangling pointers, but cannot restore physically erased pixel or text content.
+                True corruption repair requires low-level binary offset reconstruction (e.g. QPDF WebAssembly).
+                PDF-LoFi adheres to 100% truth in engineering: we will not provide a simple re-save labeled as a &ldquo;repair&rdquo; tool.
+              </p>
+              <p className="text-stone-500">
+                The permissive WebAssembly repair worker is currently in active benchmark testing for Phase 2.
               </p>
             </div>
 
             <div className="space-y-2 text-xs">
               <div className="flex items-center justify-between py-1.5 border-b border-stone-100">
-                <span className="text-stone-600">Cross-reference mode</span>
-                <span className="font-mono text-stone-800">XREF Stream Table</span>
+                <span className="text-stone-600">Engine Pipeline</span>
+                <span className="font-mono text-stone-800">QPDF WASM (Evaluation)</span>
               </div>
               <div className="flex items-center justify-between py-1.5 border-b border-stone-100">
-                <span className="text-stone-600">Trailer Catalog</span>
-                <span className="font-mono text-emerald-600">Normalized</span>
+                <span className="text-stone-600">License Verification</span>
+                <span className="font-mono text-emerald-600">Apache-2.0 Validated</span>
               </div>
             </div>
           </div>
 
           <div className="pt-4 border-t border-stone-100">
             <button
-              onClick={handleRepairDocument}
-              disabled={isProcessing}
-              className="w-full py-2.5 rounded-full text-xs font-bold bg-stone-900 hover:bg-stone-800 text-white cursor-pointer flex items-center justify-center gap-2"
+              disabled={true}
+              className="w-full py-2.5 rounded-full text-xs font-bold bg-stone-100 border border-stone-200 text-stone-400 cursor-not-allowed flex items-center justify-center gap-2"
             >
-              <Wrench className="w-3.5 h-3.5" />
-              <span>Rebuild & Repair Structure</span>
+              <Wrench className="w-3.5 h-3.5 text-stone-400" />
+              <span>In Development (Roadmap)</span>
             </button>
           </div>
         </div>

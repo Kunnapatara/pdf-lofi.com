@@ -136,6 +136,18 @@ export async function inspectPdfDocument(data: Uint8Array): Promise<DocumentInsp
   }
   fontCount = fontNames.size;
 
+  // Extract real PDF version from header bytes
+  let pdfVersion = '1.7';
+  try {
+    const headerStr = new TextDecoder('ascii').decode(data.subarray(0, 32));
+    const match = headerStr.match(/%PDF-(\d+\.\d+)/);
+    if (match) {
+      pdfVersion = match[1];
+    }
+  } catch {
+    // fallback
+  }
+
   return {
     title,
     author,
@@ -146,7 +158,7 @@ export async function inspectPdfDocument(data: Uint8Array): Promise<DocumentInsp
     creationDate,
     modificationDate,
     pageCount,
-    pdfVersion: '1.7',
+    pdfVersion,
     pageSize: {
       widthPt,
       heightPt,
