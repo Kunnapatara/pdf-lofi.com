@@ -115,7 +115,7 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
           Simple, Fair Plans for PDF Artisans
         </h1>
         <p className="text-sm text-stone-600 leading-relaxed">
-          Standard local-first operations are free within generous size thresholds. Upgrade to Pro for high-capacity batch merges, large file sizes up to 500 MB, and advanced productivity limits.
+          Standard local-first operations are free with generous capacity. Upgrade to Pro for higher-capacity merges of up to 50 files, large documents up to 500 MB, and priority support.
         </p>
       </div>
 
@@ -234,29 +234,24 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
                 <td className="py-3 px-4 text-emerald-600 font-semibold">Unlimited</td>
               </tr>
               <tr>
-                <td className="py-3 pr-4 font-semibold">Max file size limit</td>
-                <td className="py-3 px-4">25 MB</td>
-                <td className="py-3 px-4 font-bold text-stone-900">500 MB</td>
+                <td className="py-3 pr-4 font-semibold">Document size capacity</td>
+                <td className="py-3 px-4">Designed for up to 25 MB</td>
+                <td className="py-3 px-4 font-bold text-stone-900">Designed for up to 500 MB</td>
               </tr>
               <tr>
-                <td className="py-3 pr-4 font-semibold">Pages per document</td>
-                <td className="py-3 px-4">Up to 50 pages</td>
-                <td className="py-3 px-4 font-bold text-stone-900">Up to 1,000 pages</td>
+                <td className="py-3 pr-4 font-semibold">Document page capacity</td>
+                <td className="py-3 px-4">Designed for up to 50 pages</td>
+                <td className="py-3 px-4 font-bold text-stone-900">Designed for up to 1,000 pages</td>
               </tr>
               <tr>
-                <td className="py-3 pr-4 font-semibold">Batch Merge queue limit</td>
-                <td className="py-3 px-4">5 files</td>
-                <td className="py-3 px-4 font-bold text-stone-900">50 files</td>
+                <td className="py-3 pr-4 font-semibold">Merge workflow capacity</td>
+                <td className="py-3 px-4">Designed for up to 5 files</td>
+                <td className="py-3 px-4 font-bold text-stone-900">Designed for up to 50 files</td>
               </tr>
               <tr>
-                <td className="py-3 pr-4 font-semibold">Monthly compute credits allowance</td>
-                <td className="py-3 px-4">10 credits</td>
-                <td className="py-3 px-4 font-bold text-stone-900">250 credits</td>
-              </tr>
-              <tr>
-                <td className="py-3 pr-4 font-semibold">Lossless high-res export</td>
-                <td className="py-3 px-4">Standard</td>
-                <td className="py-3 px-4 font-bold text-stone-900">High-fidelity</td>
+                <td className="py-3 pr-4 font-semibold">Customer & developer support</td>
+                <td className="py-3 px-4">Community</td>
+                <td className="py-3 px-4 font-bold text-stone-900">Priority</td>
               </tr>
             </tbody>
           </table>
