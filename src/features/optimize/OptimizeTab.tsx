@@ -168,7 +168,7 @@ export const OptimizeTab: React.FC<OptimizeTabProps> = ({
           </div>
 
           <div className="pt-2 flex items-center justify-between">
-            <span className="text-xs text-stone-400">100% private, client-side only.</span>
+            <span className="text-xs text-stone-400">PDF processing runs locally in your browser.</span>
             <button
               onClick={handleRunCompression}
               disabled={isProcessing}
