@@ -27,12 +27,15 @@ type DirectoryCategoryFilter = 'all' | ToolCategory;
 
 const CATEGORY_ITEMS: { id: DirectoryCategoryFilter; label: string }[] = [
   { id: 'all', label: 'All Tools' },
-  { id: 'organize', label: 'Organize' },
-  { id: 'intelligence', label: 'Intelligence' },
-  { id: 'optimize', label: 'Optimize' },
-  { id: 'convert', label: 'Convert' },
+  { id: 'organize', label: 'Page' },
   { id: 'edit', label: 'Edit' },
+  { id: 'inspect', label: 'Inspect' },
+  { id: 'convert', label: 'Conversion' },
+  { id: 'forms', label: 'Forms' },
   { id: 'security', label: 'Security' },
+  { id: 'optimize', label: 'Optimize' },
+  { id: 'intelligence', label: 'Intelligence' },
+  { id: 'workflows', label: 'Workflow' },
 ];
 
 export const ToolsDirectory: React.FC<ToolsDirectoryProps> = ({

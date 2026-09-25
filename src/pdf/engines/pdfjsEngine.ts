@@ -56,4 +56,42 @@ export function clearPdfjsCache(cacheKey?: string): void {
   }
 }
 
+export const getPdfjsDoc = getPdfjsDocument;
+
+export async function extractTextFromPage(
+  pdfDoc: pdfjsLib.PDFDocumentProxy,
+  pageNumber: number
+): Promise<string> {
+  const page = await pdfDoc.getPage(pageNumber);
+  const textContent = await page.getTextContent();
+  const strings = textContent.items
+    .filter((item: any) => 'str' in item)
+    .map((item: any) => item.str);
+  return strings.join(' ');
+}
+
+export async function renderPageToCanvas(
+  pdfDoc: pdfjsLib.PDFDocumentProxy,
+  pageNumber: number,
+  canvas: HTMLCanvasElement,
+  scale = 1.5,
+  rotation = 0
+): Promise<void> {
+  const page = await pdfDoc.getPage(pageNumber);
+  const totalRotation = (page.rotate + rotation) % 360;
+  const viewport = page.getViewport({ scale, rotation: totalRotation });
+
+  canvas.width = Math.floor(viewport.width);
+  canvas.height = Math.floor(viewport.height);
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not get 2D canvas context');
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // @ts-expect-error PDF.js typing discrepancy
+  await page.render({ canvasContext: ctx, viewport }).promise;
+}
+
 export { pdfjsLib };

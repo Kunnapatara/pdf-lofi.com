@@ -11,6 +11,8 @@ import { CategoryNav } from '../../components/CategoryNav';
 import { ViewerTab } from './ViewerTab';
 import { OrganizeTab } from '../organize/OrganizeTab';
 import { EditTab } from '../edit/EditTab';
+import { ConversionTab } from '../conversion/ConversionTab';
+import { SecurityTab } from '../security/SecurityTab';
 import { MergeTab } from './MergeTab';
 import { SplitTab } from './SplitTab';
 import { InspectTab } from '../inspect/InspectTab';
@@ -180,6 +182,21 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           <EditTab
             document={currentDocument}
             onUpdateDocumentData={onUpdateDocumentData}
+          />
+        )}
+
+        {activeTab === 'convert' && (
+          <ConversionTab
+            document={currentDocument}
+            onOpenGeneratedPdf={(data, name, count) => onOpenMergedDoc(data, name, count)}
+          />
+        )}
+
+        {activeTab === 'security' && (
+          <SecurityTab
+            document={currentDocument}
+            onUpdateDocumentData={onUpdateDocumentData}
+            onNavigateToEdit={() => onSelectTab('edit')}
           />
         )}
 

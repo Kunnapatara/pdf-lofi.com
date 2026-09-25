@@ -5,7 +5,8 @@
  * Strict Rules:
  * - No fake tools or fake claims.
  * - Every "available" tool routes to an actual implemented processing surface.
- * - Categories: 'organize' | 'optimize' | 'convert' | 'edit' | 'security' | 'intelligence' | 'workflows'
+ * - Categories correspond to the 9 Master Workspaces:
+ *   'organize' | 'edit' | 'inspect' | 'convert' | 'forms' | 'security' | 'optimize' | 'intelligence' | 'workflows'
  * - Status: 'available' | 'coming_soon'
  * - Clearly demarcates local processing vs server-side state.
  */
@@ -23,6 +24,9 @@ import {
   Minimize2,
   FileImage,
   Lock,
+  Unlock,
+  Key,
+  EyeOff,
   ScanText,
   Binary,
   Stamp,
@@ -36,15 +40,26 @@ import {
   GitCompare,
   Workflow,
   PenTool,
+  Highlighter,
+  Sliders,
+  Shield,
+  Eye,
+  CheckSquare,
+  Radio,
+  ListOrdered,
+  Sparkles,
+  Zap,
 } from 'lucide-react';
 import { AppView, ActiveTab } from '../../types/pdf';
 
 export type ToolCategory =
   | 'organize'
-  | 'optimize'
-  | 'convert'
   | 'edit'
+  | 'inspect'
+  | 'convert'
+  | 'forms'
   | 'security'
+  | 'optimize'
   | 'intelligence'
   | 'workflows';
 
@@ -65,7 +80,9 @@ export interface CanonicalPdfTool {
 }
 
 export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
-  // --- Category: Organize ---
+  // ==========================================
+  // 1. PAGE WORKSPACE (Organize)
+  // ==========================================
   {
     id: 'merge-pdf',
     name: 'Merge PDF',
@@ -133,15 +150,15 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     keywords: ['duplicate', 'clone', 'copy', 'repeat', 'template'],
   },
   {
-    id: 'insert-blank-page',
-    name: 'Insert Blank Page',
-    shortDescription: 'Add blank standard A4/letter spacer pages anywhere in the document.',
+    id: 'extract-pages',
+    name: 'Extract Pages',
+    shortDescription: 'Select and export targeted pages to build a focused sub-document.',
     category: 'organize',
     status: 'available',
     processingLocation: 'local',
-    routeView: 'organize',
-    workspaceTab: 'organize',
-    keywords: ['blank', 'insert', 'add page', 'spacer', 'empty page'],
+    routeView: 'split',
+    workspaceTab: 'split',
+    keywords: ['extract', 'pull', 'isolate', 'subset', 'pages'],
   },
   {
     id: 'reverse-pdf',
@@ -177,6 +194,17 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     keywords: ['resize', 'dimensions', 'a4', 'letter', 'standardize', 'format'],
   },
   {
+    id: 'insert-blank-page',
+    name: 'Insert Blank Page',
+    shortDescription: 'Add blank standard A4/letter spacer pages anywhere in the document.',
+    category: 'organize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'organize',
+    workspaceTab: 'organize',
+    keywords: ['blank', 'insert', 'add page', 'spacer', 'empty page'],
+  },
+  {
     id: 'purge-blank-pages',
     name: 'Purge Blank Pages',
     shortDescription: 'Heuristic raster pixel density and text scan to detect and remove blank scanner sheets.',
@@ -187,8 +215,21 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     workspaceTab: 'organize',
     keywords: ['blank', 'purge', 'scanner', 'empty', 'clean', 'auto delete', 'heuristic'],
   },
+  {
+    id: 'page-selection',
+    name: 'Page Selection Engine',
+    shortDescription: 'Quickly select all, odd, even, invert, or comma-separated page ranges.',
+    category: 'organize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'organize',
+    workspaceTab: 'organize',
+    keywords: ['select', 'even', 'odd', 'invert', 'range', 'multiselect'],
+  },
 
-  // --- Category: Edit & Markup ---
+  // ==========================================
+  // 2. EDIT WORKSPACE
+  // ==========================================
   {
     id: 'page-numbers',
     name: 'Page Numbers',
@@ -244,13 +285,37 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     workspaceTab: 'edit',
     keywords: ['image', 'logo', 'insert', 'graphic', 'diagram', 'overlay'],
   },
+  {
+    id: 'text-overlay',
+    name: 'Text Overlay',
+    shortDescription: 'Draw custom typography onto pages at exact coordinates with font and color controls.',
+    category: 'edit',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'edit',
+    workspaceTab: 'edit',
+    keywords: ['text', 'overlay', 'type', 'write', 'add text', 'caption'],
+  },
+  {
+    id: 'markup-pdf',
+    name: 'Markup & Highlight',
+    shortDescription: 'Add vector highlights, underline rules, strike-throughs, and bounding boxes.',
+    category: 'edit',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'edit',
+    workspaceTab: 'edit',
+    keywords: ['markup', 'highlight', 'underline', 'box', 'annotate', 'pen'],
+  },
 
-  // --- Category: Intelligence & Inspection ---
+  // ==========================================
+  // 3. INSPECT WORKSPACE
+  // ==========================================
   {
     id: 'viewer-search',
     name: 'Viewer & Search',
     shortDescription: 'In-browser PDF reader with zoom controls, thumbnails, and instant text search.',
-    category: 'intelligence',
+    category: 'inspect',
     status: 'available',
     processingLocation: 'local',
     routeView: 'viewer',
@@ -258,29 +323,290 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     keywords: ['viewer', 'read', 'search', 'find', 'preview', 'zoom', 'thumbnail'],
   },
   {
-    id: 'inspect-pdf',
-    name: 'Inspect & Metadata',
-    shortDescription: 'Examine PDF version, page geometry, embedded fonts, and edit or sanitize metadata.',
-    category: 'intelligence',
+    id: 'document-search',
+    name: 'Document Search',
+    shortDescription: 'Fast client-side text stream search across all document pages with match counter.',
+    category: 'inspect',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'viewer',
+    workspaceTab: 'view',
+    keywords: ['search', 'find', 'text search', 'query'],
+  },
+  {
+    id: 'metadata-pdf',
+    name: 'Metadata Editor',
+    shortDescription: 'Inspect and edit document Title, Author, Subject, Keywords, and Creator tags.',
+    category: 'inspect',
     status: 'available',
     processingLocation: 'local',
     routeView: 'inspect',
     workspaceTab: 'inspect',
-    keywords: ['inspect', 'metadata', 'properties', 'fonts', 'structure', 'sanitize', 'version'],
+    keywords: ['metadata', 'properties', 'tags', 'author', 'title', 'keywords'],
   },
   {
-    id: 'ocr-pdf',
-    name: 'OCR Text Recognition',
-    shortDescription: 'In-browser Tesseract OCR text extraction (UTF-8 multi-language) with searchable PDF layer embedding for Latin scripts.',
-    category: 'intelligence',
+    id: 'inspect-fonts',
+    name: 'Font Inspector',
+    shortDescription: 'Scan and count embedded and referenced TrueType / Type 1 font dictionaries.',
+    category: 'inspect',
     status: 'available',
     processingLocation: 'local',
-    routeView: 'ocr',
-    workspaceTab: 'ocr',
-    keywords: ['ocr', 'scanned', 'text recognition', 'tesseract', 'extract text', 'searchable'],
+    routeView: 'inspect',
+    workspaceTab: 'inspect',
+    keywords: ['fonts', 'typography', 'embedded fonts', 'font names'],
+  },
+  {
+    id: 'inspect-images',
+    name: 'Image Object Inspector',
+    shortDescription: 'Detect and quantify embedded /XObject raster image streams in PDF dictionaries.',
+    category: 'inspect',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'inspect',
+    workspaceTab: 'inspect',
+    keywords: ['images', 'xobject', 'raster', 'embedded images', 'photos'],
+  },
+  {
+    id: 'inspect-annotations',
+    name: 'Annotations Inspector',
+    shortDescription: 'Examine PDF /Annots dictionary entries, links, and widget references.',
+    category: 'inspect',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'inspect',
+    workspaceTab: 'inspect',
+    keywords: ['annotations', 'annots', 'comments', 'links', 'widgets'],
+  },
+  {
+    id: 'inspect-forms',
+    name: 'Form Inspector',
+    shortDescription: 'Scan AcroForm catalog, field counts, and dynamic XFA stream presence.',
+    category: 'inspect',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'inspect',
+    workspaceTab: 'inspect',
+    keywords: ['forms', 'acroforms', 'fields', 'xfa', 'widgets'],
+  },
+  {
+    id: 'document-properties',
+    name: 'Document Properties',
+    shortDescription: 'Inspect PDF version, MediaBox, CropBox, page dimensions (mm/pt), and encryption status.',
+    category: 'inspect',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'inspect',
+    workspaceTab: 'inspect',
+    keywords: ['properties', 'version', 'mediabox', 'cropbox', 'dimensions', 'size'],
   },
 
-  // --- Category: Optimize & Security ---
+  // ==========================================
+  // 4. CONVERSION WORKSPACE
+  // ==========================================
+  {
+    id: 'pdf-to-png',
+    name: 'PDF → PNG',
+    shortDescription: 'Render PDF vector pages to lossless high-resolution PNG images client-side.',
+    category: 'convert',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'convert',
+    workspaceTab: 'convert',
+    keywords: ['convert', 'png', 'image', 'raster', 'export png'],
+  },
+  {
+    id: 'pdf-to-jpg',
+    name: 'PDF → JPG',
+    shortDescription: 'Convert document pages to standard JPG photos with custom compression quality.',
+    category: 'convert',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'convert',
+    workspaceTab: 'convert',
+    keywords: ['convert', 'jpg', 'jpeg', 'image', 'export jpg'],
+  },
+  {
+    id: 'pdf-to-webp',
+    name: 'PDF → WebP',
+    shortDescription: 'Export pages to modern high-efficiency WebP format for fast web rendering.',
+    category: 'convert',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'convert',
+    workspaceTab: 'convert',
+    keywords: ['convert', 'webp', 'modern image', 'export webp'],
+  },
+  {
+    id: 'images-to-pdf',
+    name: 'Images → PDF',
+    shortDescription: 'Combine multiple PNG, JPG, or WebP images into a single multi-page PDF document.',
+    category: 'convert',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'convert',
+    workspaceTab: 'convert',
+    keywords: ['images to pdf', 'photos to pdf', 'jpg to pdf', 'png to pdf', 'create pdf'],
+  },
+  {
+    id: 'pdf-to-txt',
+    name: 'PDF → Plaintext (.txt)',
+    shortDescription: 'Extract all searchable text streams into clean plaintext with page markers.',
+    category: 'convert',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'convert',
+    workspaceTab: 'convert',
+    keywords: ['convert', 'txt', 'plaintext', 'text extract', 'raw text'],
+  },
+
+  // ==========================================
+  // 5. FORMS WORKSPACE
+  // ==========================================
+  {
+    id: 'forms-fill',
+    name: 'Fill AcroForms',
+    shortDescription: 'Enter values into standard AcroForm text fields directly in your browser.',
+    category: 'forms',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'forms',
+    workspaceTab: 'forms',
+    keywords: ['form', 'fill', 'acroform', 'inputs', 'text fields'],
+  },
+  {
+    id: 'forms-checkbox',
+    name: 'Interactive Checkboxes',
+    shortDescription: 'Toggle interactive PDF form checkboxes on or off client-side.',
+    category: 'forms',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'forms',
+    workspaceTab: 'forms',
+    keywords: ['checkbox', 'check', 'toggle', 'form checkbox'],
+  },
+  {
+    id: 'forms-radio',
+    name: 'Radio Groups',
+    shortDescription: 'Select single active choices in mutually exclusive PDF radio button sets.',
+    category: 'forms',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'forms',
+    workspaceTab: 'forms',
+    keywords: ['radio', 'option', 'choice', 'form radio'],
+  },
+  {
+    id: 'forms-dropdown',
+    name: 'Dropdown Selection',
+    shortDescription: 'Select options from interactive PDF combo box and dropdown field lists.',
+    category: 'forms',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'forms',
+    workspaceTab: 'forms',
+    keywords: ['dropdown', 'select', 'combobox', 'list'],
+  },
+  {
+    id: 'forms-flatten',
+    name: 'Flatten Form Fields',
+    shortDescription: 'Lock interactive fields permanently into static vector page graphics.',
+    category: 'forms',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'forms',
+    workspaceTab: 'forms',
+    keywords: ['flatten', 'lock', 'static', 'convert fields', 'bake'],
+  },
+  {
+    id: 'forms-xfa',
+    name: 'XFA Dynamic Form Detection',
+    shortDescription: 'Truthfully detect and flag proprietary dynamic XML Forms Architecture streams.',
+    category: 'forms',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'forms',
+    workspaceTab: 'forms',
+    keywords: ['xfa', 'dynamic form', 'xml forms', 'adobe xfa'],
+  },
+
+  // ==========================================
+  // 6. SECURITY WORKSPACE
+  // ==========================================
+  {
+    id: 'redact-pdf',
+    name: 'Redaction (Vector Blackout)',
+    shortDescription: 'Burn permanent opaque blackout rectangles over sensitive page areas and purge metadata.',
+    category: 'security',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'security',
+    workspaceTab: 'security',
+    keywords: ['redact', 'blackout', 'censor', 'mask', 'confidential', 'sanitize'],
+  },
+  {
+    id: 'protect-pdf',
+    name: 'Password Protect (AES-256)',
+    shortDescription: 'Standard Security Handler encryption requires client-side WebAssembly QPDF engine.',
+    category: 'security',
+    status: 'coming_soon',
+    badge: 'Roadmap (QPDF)',
+    processingLocation: 'local',
+    routeView: 'security',
+    workspaceTab: 'security',
+    keywords: ['password', 'protect', 'encrypt', 'security', 'aes'],
+  },
+  {
+    id: 'encrypt-pdf',
+    name: 'PDF Encryption Engine',
+    shortDescription: 'Client-side AES-128 / AES-256 standard encryption via QPDF WebAssembly.',
+    category: 'security',
+    status: 'coming_soon',
+    badge: 'Roadmap (QPDF)',
+    processingLocation: 'local',
+    routeView: 'security',
+    workspaceTab: 'security',
+    keywords: ['encrypt', 'cipher', 'aes-256', 'cryptography'],
+  },
+  {
+    id: 'decrypt-pdf',
+    name: 'Decrypt & Remove Password',
+    shortDescription: 'Remove user/owner encryption with authorized password via QPDF WASM.',
+    category: 'security',
+    status: 'coming_soon',
+    badge: 'Roadmap (QPDF)',
+    processingLocation: 'local',
+    routeView: 'security',
+    workspaceTab: 'security',
+    keywords: ['decrypt', 'remove password', 'unlock', 'open'],
+  },
+  {
+    id: 'permissions-pdf',
+    name: 'Document Permissions',
+    shortDescription: 'Restrict printing, copying, or modification via standard PDF permission bitmasks.',
+    category: 'security',
+    status: 'coming_soon',
+    badge: 'Roadmap (QPDF)',
+    processingLocation: 'local',
+    routeView: 'security',
+    workspaceTab: 'security',
+    keywords: ['permissions', 'restrict', 'print lock', 'copy lock'],
+  },
+  {
+    id: 'digital-signature',
+    name: 'Cryptographic Digital Signature',
+    shortDescription: 'PKCS#7 X.509 cryptographic digital signing. (Electronic signature image is available now in Edit).',
+    category: 'security',
+    status: 'coming_soon',
+    badge: 'Roadmap (PKCS#7)',
+    processingLocation: 'local',
+    routeView: 'security',
+    workspaceTab: 'security',
+    keywords: ['digital signature', 'pkcs7', 'x509', 'certificate', 'crypto sign'],
+  },
+
+  // ==========================================
+  // 7. OPTIMIZE WORKSPACE
+  // ==========================================
   {
     id: 'compress-pdf',
     name: 'Compress PDF (Stream Optimization)',
@@ -293,29 +619,87 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     keywords: ['compress', 'reduce size', 'optimize', 'shrink', 'smaller', 'flate', 'object streams'],
   },
   {
+    id: 'sanitize-metadata',
+    name: 'Metadata Cleanup',
+    shortDescription: 'Completely purge author, creation dates, software producers, and tracking keywords.',
+    category: 'optimize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'inspect',
+    workspaceTab: 'inspect',
+    keywords: ['sanitize', 'metadata cleanup', 'strip tags', 'privacy'],
+  },
+  {
+    id: 'optimize-images',
+    name: 'Image Optimization',
+    shortDescription: 'Stream re-compression for embedded image objects to decrease storage footprint.',
+    category: 'optimize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'optimize',
+    workspaceTab: 'optimize',
+    keywords: ['images', 'compress images', 'downsample', 'optimize photos'],
+  },
+  {
+    id: 'linearize-pdf',
+    name: 'Linearize (Fast Web View)',
+    shortDescription: 'Restructure PDF for byte-range streaming via QPDF WebAssembly.',
+    category: 'optimize',
+    status: 'coming_soon',
+    badge: 'Roadmap (QPDF)',
+    processingLocation: 'local',
+    routeView: 'optimize',
+    workspaceTab: 'optimize',
+    keywords: ['linearize', 'fast web view', 'streaming', 'byte serving'],
+  },
+  {
     id: 'repair-pdf',
     name: 'Repair PDF Structure',
-    shortDescription: 'In development: Deep corrupted PDF repair engine with QPDF/WASM.',
-    category: 'security',
+    shortDescription: 'In development: Deep corrupted PDF structure and xref repair engine with QPDF/WASM.',
+    category: 'optimize',
     status: 'coming_soon',
-    badge: 'Roadmap',
+    badge: 'Roadmap (QPDF)',
     processingLocation: 'local',
     routeView: 'optimize',
     workspaceTab: 'optimize',
     keywords: ['repair', 'fix', 'corrupt', 'xref', 'rebuild', 'damaged'],
   },
 
-  // --- Category: Forms, Compare & Workflows ---
+  // ==========================================
+  // 8. INTELLIGENCE WORKSPACE
+  // ==========================================
   {
-    id: 'forms-pdf',
-    name: 'PDF Forms & Flatten',
-    shortDescription: 'Fill interactive AcroForm fields and flatten widgets into static vectors. Note: dynamic XFA forms are not supported.',
-    category: 'edit',
+    id: 'ocr-pdf',
+    name: 'OCR Text Recognition',
+    shortDescription: 'In-browser Tesseract OCR text extraction (UTF-8 multi-language) with searchable PDF layer embedding for Latin scripts.',
+    category: 'intelligence',
     status: 'available',
     processingLocation: 'local',
-    routeView: 'forms',
-    workspaceTab: 'forms',
-    keywords: ['forms', 'acroforms', 'fill', 'flatten', 'checkbox', 'fields', 'lock'],
+    routeView: 'ocr',
+    workspaceTab: 'ocr',
+    keywords: ['ocr', 'scanned', 'text recognition', 'tesseract', 'extract text', 'searchable'],
+  },
+  {
+    id: 'searchable-pdf',
+    name: 'Searchable PDF Generator',
+    shortDescription: 'Embed invisible selectable Latin text layers aligned with scanned document images.',
+    category: 'intelligence',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'ocr',
+    workspaceTab: 'ocr',
+    keywords: ['searchable', 'text layer', 'ocr layer', 'selectable text'],
+  },
+  {
+    id: 'ocr-confidence',
+    name: 'OCR Confidence Analyzer',
+    shortDescription: 'Inspect word-level confidence ratings and character fidelity metrics from OCR passes.',
+    category: 'intelligence',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'ocr',
+    workspaceTab: 'ocr',
+    keywords: ['confidence', 'accuracy', 'ocr rating', 'fidelity'],
   },
   {
     id: 'compare-pdf',
@@ -329,15 +713,63 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     keywords: ['compare', 'diff', 'versions', 'revisions', 'changes', 'text diff'],
   },
   {
-    id: 'workflow-pdf',
-    name: 'Local Workflow Pipeline',
-    shortDescription: 'Compose and execute multi-step automated local workflows on documents in-browser.',
+    id: 'visual-compare',
+    name: 'Visual Compare (Side-by-Side)',
+    shortDescription: 'Side-by-side canvas rendering of document versions to identify layout adjustments.',
+    category: 'intelligence',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'compare',
+    workspaceTab: 'compare',
+    keywords: ['visual compare', 'side by side', 'canvas diff', 'visual layout'],
+  },
+
+  // ==========================================
+  // 9. WORKFLOW WORKSPACE
+  // ==========================================
+  {
+    id: 'workflow-pipeline',
+    name: 'Workflow Pipeline Engine',
+    shortDescription: 'Chain multi-step automated local operations (Crop → Number → Stamp → Compress).',
     category: 'workflows',
     status: 'available',
     processingLocation: 'local',
     routeView: 'workflows',
     workspaceTab: 'workflows',
-    keywords: ['workflow', 'pipeline', 'batch', 'automate', 'sequence', 'chain'],
+    keywords: ['workflow', 'pipeline', 'automate', 'chain', 'sequence'],
+  },
+  {
+    id: 'workflow-presets',
+    name: 'One-Click Workflow Presets',
+    shortDescription: 'Pre-configured pipelines for archival preparation, clean pagination, and official stamping.',
+    category: 'workflows',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'workflows',
+    workspaceTab: 'workflows',
+    keywords: ['presets', 'templates', 'one click', 'quick workflow'],
+  },
+  {
+    id: 'workflow-batch',
+    name: 'Batch Processing Queue',
+    shortDescription: 'Apply workflows across multiple files in a unified local browser execution queue.',
+    category: 'workflows',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'workflows',
+    workspaceTab: 'workflows',
+    keywords: ['batch', 'queue', 'bulk', 'multi file'],
+  },
+  {
+    id: 'workflow-saved',
+    name: 'Saved Custom Workflows',
+    shortDescription: 'Save and reuse custom multi-step pipeline recipes in your browser IndexedDB.',
+    category: 'workflows',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'workflows',
+    workspaceTab: 'workflows',
+    keywords: ['saved', 'custom workflows', 'indexeddb', 'recipes'],
   },
 ];
 
@@ -374,34 +806,98 @@ export function getToolIcon(id: string, className = 'w-6 h-6'): React.ReactNode 
       return React.createElement(Maximize2, { className });
     case 'purge-blank-pages':
       return React.createElement(FileX, { className });
-    case 'viewer-search':
-      return React.createElement(Search, { className });
-    case 'compress-pdf':
-      return React.createElement(Minimize2, { className });
-    case 'repair-pdf':
-      return React.createElement(Wrench, { className });
-    case 'protect-pdf':
-      return React.createElement(Lock, { className });
+    case 'page-selection':
+      return React.createElement(CheckSquare, { className });
+
     case 'page-numbers':
       return React.createElement(Binary, { className });
     case 'watermark-pdf':
-      return React.createElement(Stamp, { className });
     case 'stamps-pdf':
       return React.createElement(Stamp, { className });
     case 'signature-pdf':
       return React.createElement(PenTool, { className });
     case 'insert-image':
       return React.createElement(FileImage, { className });
-    case 'inspect-pdf':
+    case 'text-overlay':
       return React.createElement(FileText, { className });
-    case 'ocr-pdf':
-      return React.createElement(ScanText, { className });
-    case 'forms-pdf':
+    case 'markup-pdf':
+      return React.createElement(Highlighter, { className });
+
+    case 'viewer-search':
+    case 'document-search':
+      return React.createElement(Search, { className });
+    case 'metadata-pdf':
+    case 'sanitize-metadata':
+      return React.createElement(FileText, { className });
+    case 'inspect-fonts':
+      return React.createElement(Binary, { className });
+    case 'inspect-images':
+      return React.createElement(FileImage, { className });
+    case 'inspect-annotations':
+      return React.createElement(Highlighter, { className });
+    case 'inspect-forms':
       return React.createElement(FileCheck, { className });
+    case 'document-properties':
+      return React.createElement(Sliders, { className });
+
+    case 'pdf-to-png':
+    case 'pdf-to-jpg':
+    case 'pdf-to-webp':
+    case 'images-to-pdf':
+      return React.createElement(FileImage, { className });
+    case 'pdf-to-txt':
+      return React.createElement(FileText, { className });
+
+    case 'forms-fill':
+      return React.createElement(FileCheck, { className });
+    case 'forms-checkbox':
+      return React.createElement(CheckSquare, { className });
+    case 'forms-radio':
+      return React.createElement(Radio, { className });
+    case 'forms-dropdown':
+      return React.createElement(ListOrdered, { className });
+    case 'forms-flatten':
+      return React.createElement(Lock, { className });
+    case 'forms-xfa':
+      return React.createElement(Sparkles, { className });
+
+    case 'redact-pdf':
+      return React.createElement(EyeOff, { className });
+    case 'protect-pdf':
+    case 'encrypt-pdf':
+      return React.createElement(Lock, { className });
+    case 'decrypt-pdf':
+      return React.createElement(Unlock, { className });
+    case 'permissions-pdf':
+      return React.createElement(Key, { className });
+    case 'digital-signature':
+      return React.createElement(Shield, { className });
+
+    case 'compress-pdf':
+      return React.createElement(Minimize2, { className });
+    case 'optimize-images':
+      return React.createElement(Zap, { className });
+    case 'linearize-pdf':
+      return React.createElement(Zap, { className });
+    case 'repair-pdf':
+      return React.createElement(Wrench, { className });
+
+    case 'ocr-pdf':
+    case 'searchable-pdf':
+      return React.createElement(ScanText, { className });
+    case 'ocr-confidence':
+      return React.createElement(Sparkles, { className });
     case 'compare-pdf':
       return React.createElement(GitCompare, { className });
-    case 'workflow-pdf':
+    case 'visual-compare':
+      return React.createElement(Eye, { className });
+
+    case 'workflow-pipeline':
+    case 'workflow-presets':
+    case 'workflow-batch':
+    case 'workflow-saved':
       return React.createElement(Workflow, { className });
+
     default:
       return React.createElement(Layers, { className });
   }

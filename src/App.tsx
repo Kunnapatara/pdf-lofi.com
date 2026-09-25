@@ -10,6 +10,7 @@ import { LandingView } from './features/landing/LandingView';
 import { MergeToolView } from './features/tools/MergeToolView';
 import { SplitToolView } from './features/tools/SplitToolView';
 import { PlaceholderToolView } from './features/tools/PlaceholderToolView';
+import { ConversionTab } from './features/conversion/ConversionTab';
 import { ToolsDirectory } from './features/tools/ToolsDirectory';
 import { WorkspaceView } from './features/workspace/WorkspaceView';
 import { PricingView } from './features/pricing/PricingView';
@@ -324,6 +325,26 @@ export default function App() {
       return;
     }
 
+    if (view === 'convert') {
+      if (currentDocument) {
+        setCurrentView('workspace');
+        setActiveWorkspaceTab('convert');
+      } else {
+        setCurrentView('convert');
+      }
+      return;
+    }
+
+    if (view === 'security') {
+      if (currentDocument) {
+        setCurrentView('workspace');
+        setActiveWorkspaceTab('security');
+      } else {
+        handleLoadSample('security');
+      }
+      return;
+    }
+
     if (view === 'workspace') {
       if (!currentDocument) {
         handleLoadSample('organize');
@@ -411,21 +432,10 @@ export default function App() {
             />
           )}
 
-          {currentView === 'compress' && (
-            <PlaceholderToolView
-              toolName="Compress PDF"
-              description="Reduce PDF file size while preserving high visual quality and typography."
-              iconNode={<Minimize2 className="w-6 h-6 text-orange-600" />}
-              onNavigateView={handleNavigateView}
-            />
-          )}
-
           {currentView === 'convert' && (
-            <PlaceholderToolView
-              toolName="Convert PDF"
-              description="Convert PDF pages to high-resolution JPG or PNG images directly in your browser."
-              iconNode={<FileImage className="w-6 h-6 text-orange-600" />}
-              onNavigateView={handleNavigateView}
+            <ConversionTab
+              document={currentDocument}
+              onOpenGeneratedPdf={handleOpenSplitOrMergedDocInWorkspace}
             />
           )}
 
@@ -434,12 +444,19 @@ export default function App() {
               onSelectToolAction={(tab) => {
                 if (tab === 'merge') setCurrentView('merge');
                 else if (tab === 'split') setCurrentView('split');
-                else {
+                else if (tab === 'convert') {
+                  if (currentDocument) {
+                    setCurrentView('workspace');
+                    setActiveWorkspaceTab('convert');
+                  } else {
+                    setCurrentView('convert');
+                  }
+                } else {
                   if (currentDocument) {
                     setCurrentView('workspace');
                     setActiveWorkspaceTab(tab);
                   } else {
-                    handleLoadSample();
+                    handleLoadSample(tab === 'tools' ? 'organize' : (tab as any));
                   }
                 }
               }}

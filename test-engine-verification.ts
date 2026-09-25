@@ -55,6 +55,11 @@ import {
   comparePdfDocuments,
   executeCompressPdf,
   executeRemoveBlankPages,
+  convertImagesToPdf,
+  convertPdfToTxt,
+  applyTextOverlay,
+  applyMarkup,
+  applyRedaction,
 } from './src/pdf/core/operations';
 import { embedOcrTextLayer, PageOcrOutput } from './src/pdf/engines/ocrEngine';
 
@@ -693,6 +698,130 @@ async function runAllTests() {
     );
   } catch (e: any) {
     assert(false, 'Compress PDF (Stream Optimization)', e.message);
+  }
+
+  // ==========================================
+  // Test 20: Images to PDF Conversion
+  // ==========================================
+  try {
+    const png1 = await createTinyPngBytes();
+    const png2 = await createTinyPngBytes();
+    const converted = await convertImagesToPdf([
+      { data: png1, mimeType: 'image/png', name: 'photo1.png' },
+      { data: png2, mimeType: 'image/png', name: 'photo2.png' },
+    ], { pageSize: 'fit' });
+
+    const reloaded = await PDFDocument.load(converted.data);
+    const pagesOk = reloaded.getPageCount() === 2;
+
+    let imageCount = 0;
+    for (const [, obj] of reloaded.context.enumerateIndirectObjects()) {
+      if (
+        obj instanceof PDFRawStream &&
+        obj.dict.get(PDFName.of('Subtype'))?.toString() === '/Image'
+      ) {
+        imageCount++;
+      }
+    }
+
+    assert(
+      pagesOk && imageCount >= 2,
+      'Images to PDF Conversion',
+      `Converted 2 images into PDF with ${reloaded.getPageCount()} pages and ${imageCount} embedded Image XObjects`
+    );
+  } catch (e: any) {
+    assert(false, 'Images to PDF Conversion', e.message);
+  }
+
+  // ==========================================
+  // Test 21: PDF to Plaintext (.txt) Extraction
+  // ==========================================
+  try {
+    const doc = await createLabeledFixture(['DOC_ALPHA_CONTENT', 'DOC_BETA_CONTENT']);
+    const txt = await convertPdfToTxt(doc, { includePageMarkers: true });
+
+    const hasP1 = txt.includes('--- Page 1 ---') && txt.includes('DOC_ALPHA_CONTENT');
+    const hasP2 = txt.includes('--- Page 2 ---') && txt.includes('DOC_BETA_CONTENT');
+
+    assert(
+      hasP1 && hasP2,
+      'PDF to Plaintext (.txt) Conversion',
+      `Extracted structured text stream with verified page markers: "${txt.replace(/\n/g, ' ')}"`
+    );
+  } catch (e: any) {
+    assert(false, 'PDF to Plaintext (.txt) Conversion', e.message);
+  }
+
+  // ==========================================
+  // Test 22: Text Overlay (Vector Typography)
+  // ==========================================
+  try {
+    const doc = await createLabeledFixture(['BASE_DOCUMENT_TEXT']);
+    const overlaid = await applyTextOverlay(doc, {
+      text: 'SPECIAL_SECURITY_NOTICE',
+      targetPages: [1],
+      position: 'top-right',
+      fontSize: 14,
+    });
+
+    const pageText = await extractPageText(overlaid.data, 1);
+    const hasOverlay = pageText.includes('SPECIAL_SECURITY_NOTICE');
+    const hasBase = pageText.includes('BASE_DOCUMENT_TEXT');
+
+    assert(
+      hasOverlay && hasBase,
+      'Text Overlay (Vector Typography)',
+      `Overlaid text extracted alongside base stream: "${pageText}"`
+    );
+  } catch (e: any) {
+    assert(false, 'Text Overlay (Vector Typography)', e.message);
+  }
+
+  // ==========================================
+  // Test 23: Vector Markup (Highlight & Underline)
+  // ==========================================
+  try {
+    const doc = await createLabeledFixture(['LEGAL_TERMS_SECTION']);
+    const marked = await applyMarkup(doc, {
+      type: 'highlight',
+      targetPages: [1],
+      rect: { x: 50, y: 700, width: 300, height: 20 },
+    });
+
+    const reloaded = await PDFDocument.load(marked.data);
+    const valid = reloaded.getPageCount() === 1 && marked.data.byteLength > doc.byteLength;
+
+    assert(
+      valid,
+      'Vector Markup (Highlight Annotation)',
+      `Vector highlight rectangle embedded into page stream; valid ${reloaded.getPageCount()} page PDF`
+    );
+  } catch (e: any) {
+    assert(false, 'Vector Markup (Highlight Annotation)', e.message);
+  }
+
+  // ==========================================
+  // Test 24: Vector Redaction & Metadata Sanitization
+  // ==========================================
+  try {
+    const doc = await createLabeledFixture(['SECRET_ACCOUNT_NUMBER_12345']);
+    const redacted = await applyRedaction(doc, {
+      boxes: [{ pageNumber: 1, x: 50, y: 700, width: 350, height: 30 }],
+      sanitizeMetadata: true,
+    });
+
+    const reloaded = await PDFDocument.load(redacted.data);
+    const titleEmpty = !reloaded.getTitle();
+    const authorEmpty = !reloaded.getAuthor();
+    const validPages = reloaded.getPageCount() === 1;
+
+    assert(
+      validPages && titleEmpty && authorEmpty,
+      'Vector Redaction & Metadata Sanitization',
+      `Opaque blackout vector box applied and metadata purged (Title: "${reloaded.getTitle() || ''}", Author: "${reloaded.getAuthor() || ''}")`
+    );
+  } catch (e: any) {
+    assert(false, 'Vector Redaction & Metadata Sanitization', e.message);
   }
 
   // ==========================================

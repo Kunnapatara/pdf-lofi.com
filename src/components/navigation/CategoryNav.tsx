@@ -12,6 +12,8 @@ import {
   FileCheck,
   GitCompare,
   Workflow,
+  FileImage,
+  Shield,
 } from 'lucide-react';
 import { ActiveTab } from '../../types/pdf';
 
@@ -29,6 +31,8 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
   const tabs = [
     { id: 'organize' as ActiveTab, label: 'Organize', icon: <Layers className="w-3.5 h-3.5" /> },
     { id: 'edit' as ActiveTab, label: 'Edit & Markup', icon: <Stamp className="w-3.5 h-3.5" /> },
+    { id: 'convert' as ActiveTab, label: 'Convert', icon: <FileImage className="w-3.5 h-3.5" /> },
+    { id: 'security' as ActiveTab, label: 'Security', icon: <Shield className="w-3.5 h-3.5" /> },
     { id: 'inspect' as ActiveTab, label: 'Inspect', icon: <FileText className="w-3.5 h-3.5" /> },
     { id: 'optimize' as ActiveTab, label: 'Optimize', icon: <Zap className="w-3.5 h-3.5" /> },
     { id: 'ocr' as ActiveTab, label: 'OCR', icon: <Scan className="w-3.5 h-3.5" /> },

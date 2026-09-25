@@ -21,3 +21,7 @@ export * from './formOperation';
 export * from './metadataOperation';
 export * from './compressOperation';
 export * from './compareOperation';
+export * from './conversionOperation';
+export * from './textOverlayOperation';
+export * from './markupOperation';
+export * from './redactionOperation';

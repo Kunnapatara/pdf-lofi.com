@@ -258,6 +258,57 @@ export class DocumentService {
     );
   }
 
+  async applyTextOverlay(
+    document: LocalDocument,
+    options: {
+      text: string;
+      targetPages: number[];
+      position: 'top-left' | 'top-right' | 'center' | 'bottom-left' | 'bottom-right' | 'custom';
+      customX?: number;
+      customY?: number;
+      fontSize?: number;
+      color?: { r: number; g: number; b: number };
+      opacity?: number;
+    }
+  ): Promise<LocalDocument> {
+    return this.safeMutate(document, 'applyTextOverlay', (data) =>
+      import('../pdf/core/operations/textOverlayOperation').then((m) =>
+        m.applyTextOverlay(data, options)
+      )
+    );
+  }
+
+  async applyMarkup(
+    document: LocalDocument,
+    options: {
+      type: 'highlight' | 'underline' | 'box' | 'strike';
+      targetPages: number[];
+      rect: { x: number; y: number; width: number; height: number };
+      color?: { r: number; g: number; b: number };
+      opacity?: number;
+    }
+  ): Promise<LocalDocument> {
+    return this.safeMutate(document, 'applyMarkup', (data) =>
+      import('../pdf/core/operations/markupOperation').then((m) =>
+        m.applyMarkup(data, options)
+      )
+    );
+  }
+
+  async applyRedaction(
+    document: LocalDocument,
+    options: {
+      boxes: Array<{ pageNumber: number; x: number; y: number; width: number; height: number }>;
+      sanitizeMetadata?: boolean;
+    }
+  ): Promise<LocalDocument> {
+    return this.safeMutate(document, 'applyRedaction', (data) =>
+      import('../pdf/core/operations/redactionOperation').then((m) =>
+        m.applyRedaction(data, options)
+      )
+    );
+  }
+
   async compressDocument(
     document: LocalDocument,
     options?: CompressionOptions

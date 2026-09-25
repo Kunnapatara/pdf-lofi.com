@@ -12,6 +12,8 @@ import {
   Upload,
   X,
   Layers,
+  FileText,
+  Highlighter,
 } from 'lucide-react';
 import { LocalDocument } from '../../types/pdf';
 import { documentService } from '../../services/documentService';
@@ -22,7 +24,14 @@ import { WatermarkPosition } from '../../pdf/core/operations/watermarkOperation'
 import { parsePageRange } from '../../pdf/core/operations/rangeParser';
 import { PredefinedStampType } from '../../pdf/core/operations/stampOperation';
 
-export type EditSubTool = 'page-numbers' | 'watermark' | 'stamps' | 'signature' | 'image';
+export type EditSubTool =
+  | 'page-numbers'
+  | 'watermark'
+  | 'stamps'
+  | 'signature'
+  | 'image'
+  | 'text-overlay'
+  | 'markup';
 
 interface EditTabProps {
   document: LocalDocument;
@@ -86,7 +95,84 @@ export const EditTab: React.FC<EditTabProps> = ({
   const [overlayHeight, setOverlayHeight] = useState<number>(60);
   const [overlayPosition, setOverlayPosition] = useState<'top-left' | 'top-right' | 'center' | 'bottom-right'>('top-right');
 
+  // --- Text Overlay Settings ---
+  const [overlayText, setOverlayText] = useState<string>('Notice: Confidential Document');
+  const [textFontSize, setTextFontSize] = useState<number>(14);
+  const [textPosition, setTextPosition] = useState<'top-left' | 'top-right' | 'center' | 'bottom-left' | 'bottom-right' | 'custom'>('top-left');
+  const [textTargetPage, setTextTargetPage] = useState<number>(1);
+  const [textColorHex, setTextColorHex] = useState<string>('#1E293B');
+
+  // --- Markup Settings ---
+  const [markupType, setMarkupType] = useState<'highlight' | 'underline' | 'box' | 'strike'>('highlight');
+  const [markupTargetPage, setMarkupTargetPage] = useState<number>(1);
+  const [markupPreset, setMarkupPreset] = useState<'header' | 'title' | 'body' | 'custom'>('title');
+
   const rangeValidation = parsePageRange(watermarkCustomRange, document.pageCount);
+
+  // Apply Text Overlay
+  const handleApplyTextOverlay = async () => {
+    if (!document.data || !overlayText.trim()) return;
+    setIsProcessing(true);
+    setProcessingMsg('Adding text overlay locally...');
+    setErrorMsg(null);
+    setSuccessBanner(null);
+
+    try {
+      const r = parseInt(textColorHex.slice(1, 3), 16) / 255 || 0.1;
+      const g = parseInt(textColorHex.slice(3, 5), 16) / 255 || 0.1;
+      const b = parseInt(textColorHex.slice(5, 7), 16) / 255 || 0.1;
+
+      const updated = await documentService.applyTextOverlay(document, {
+        text: overlayText,
+        targetPages: [textTargetPage],
+        position: textPosition,
+        fontSize: textFontSize,
+        color: { r, g, b },
+      });
+
+      if (updated.data) {
+        await onUpdateDocumentData(updated.data, updated.pageCount, 'Text Overlay');
+        setSuccessBanner(`Text overlay added to Page ${textTargetPage}.`);
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to apply text overlay');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Apply Markup
+  const handleApplyMarkup = async () => {
+    if (!document.data) return;
+    setIsProcessing(true);
+    setProcessingMsg('Applying vector markup...');
+    setErrorMsg(null);
+    setSuccessBanner(null);
+
+    try {
+      let rect = { x: 50, y: 700, width: 495, height: 24 };
+      if (markupPreset === 'header') {
+        rect = { x: 36, y: 740, width: 520, height: 30 };
+      } else if (markupPreset === 'body') {
+        rect = { x: 50, y: 600, width: 495, height: 60 };
+      }
+
+      const updated = await documentService.applyMarkup(document, {
+        type: markupType,
+        targetPages: [markupTargetPage],
+        rect,
+      });
+
+      if (updated.data) {
+        await onUpdateDocumentData(updated.data, updated.pageCount, `Markup (${markupType})`);
+        setSuccessBanner(`${markupType.toUpperCase()} markup applied to Page ${markupTargetPage}.`);
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to apply markup');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   // Apply Page Numbers
   const handleApplyPageNumbers = async () => {
@@ -381,6 +467,30 @@ export const EditTab: React.FC<EditTabProps> = ({
           >
             <ImageIcon className="w-3.5 h-3.5" />
             <span>Insert Image</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTool('text-overlay')}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeSubTool === 'text-overlay'
+                ? 'bg-white text-stone-900 shadow-2xs'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Text Overlay</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTool('markup')}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeSubTool === 'markup'
+                ? 'bg-white text-stone-900 shadow-2xs'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            <Highlighter className="w-3.5 h-3.5" />
+            <span>Markup</span>
           </button>
         </div>
 
@@ -1018,6 +1128,199 @@ export const EditTab: React.FC<EditTabProps> = ({
                   ) : (
                     <div className="text-[9px] text-stone-400 text-center font-mono py-2">Image Preview</div>
                   )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sub-tool 6: Text Overlay */}
+      {activeSubTool === 'text-overlay' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-7 bg-white rounded-3xl border border-stone-200/90 p-6 shadow-xs space-y-4">
+            <h3 className="text-sm font-bold text-stone-900">Custom Text Overlay</h3>
+            <p className="text-xs text-stone-500">
+              Draw crisp vector typography directly onto document pages without rasterization.
+            </p>
+
+            <div className="space-y-1.5 pt-2 border-t border-stone-100">
+              <label className="text-xs font-bold text-stone-700 block">Text Content</label>
+              <textarea
+                value={overlayText}
+                onChange={(e) => setOverlayText(e.target.value)}
+                rows={3}
+                className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                placeholder="Enter text to overlay..."
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-700 block">Target Page</label>
+                <input
+                  type="number"
+                  min="1"
+                  max={document.pageCount}
+                  value={textTargetPage}
+                  onChange={(e) => setTextTargetPage(parseInt(e.target.value, 10) || 1)}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-700 block">Font Size (pt)</label>
+                <input
+                  type="number"
+                  min="8"
+                  max="72"
+                  value={textFontSize}
+                  onChange={(e) => setTextFontSize(parseInt(e.target.value, 10) || 14)}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-700 block">Position</label>
+                <select
+                  value={textPosition}
+                  onChange={(e) => setTextPosition(e.target.value as any)}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white"
+                >
+                  <option value="top-left">Top Left</option>
+                  <option value="top-right">Top Right</option>
+                  <option value="center">Center</option>
+                  <option value="bottom-left">Bottom Left</option>
+                  <option value="bottom-right">Bottom Right</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-stone-100 flex items-center justify-between">
+              <span className="text-xs text-stone-500">Processed locally in browser.</span>
+              <button
+                onClick={handleApplyTextOverlay}
+                disabled={isProcessing || !overlayText.trim()}
+                className="px-5 py-2.5 rounded-full text-xs font-bold bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50 cursor-pointer"
+              >
+                Apply Text Overlay
+              </button>
+            </div>
+          </div>
+
+          <div className="lg:col-span-5 bg-stone-100 rounded-3xl border border-stone-200/90 p-6 flex flex-col justify-between">
+            <div>
+              <h4 className="text-xs font-bold text-stone-800 uppercase tracking-wider">Placement Preview</h4>
+              <div className="mt-6 mx-auto w-48 h-64 bg-white rounded-lg shadow-sm border border-stone-300 relative p-3 flex flex-col justify-between overflow-hidden">
+                <div className="space-y-2 opacity-20 pt-2">
+                  <div className="h-2 bg-stone-400 rounded-sm w-3/4"></div>
+                  <div className="h-1.5 bg-stone-300 rounded-sm w-full"></div>
+                  <div className="h-1.5 bg-stone-300 rounded-sm w-5/6"></div>
+                </div>
+
+                <div
+                  className={`p-1.5 border border-dashed border-orange-400 rounded bg-orange-50/80 text-[10px] font-bold text-stone-800 truncate max-w-[140px] ${
+                    textPosition === 'top-right'
+                      ? 'self-end'
+                      : textPosition === 'top-left'
+                      ? 'self-start'
+                      : textPosition === 'bottom-right'
+                      ? 'self-end mt-auto'
+                      : textPosition === 'bottom-left'
+                      ? 'self-start mt-auto'
+                      : 'self-center my-auto'
+                  }`}
+                >
+                  {overlayText.substring(0, 20)}...
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sub-tool 7: Vector Markup */}
+      {activeSubTool === 'markup' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-7 bg-white rounded-3xl border border-stone-200/90 p-6 shadow-xs space-y-4">
+            <h3 className="text-sm font-bold text-stone-900">Vector Markup & Annotations</h3>
+            <p className="text-xs text-stone-500">
+              Add highlight stripes, underline rules, or outline boxes directly to document streams.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-stone-100">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-700 block">Markup Style</label>
+                <select
+                  value={markupType}
+                  onChange={(e) => setMarkupType(e.target.value as any)}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white"
+                >
+                  <option value="highlight">Highlight (Translucent Yellow)</option>
+                  <option value="underline">Underline Rule (Blue)</option>
+                  <option value="box">Bounding Box (Green)</option>
+                  <option value="strike">Strike-Through (Red)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-700 block">Target Page</label>
+                <input
+                  type="number"
+                  min="1"
+                  max={document.pageCount}
+                  value={markupTargetPage}
+                  onChange={(e) => setMarkupTargetPage(parseInt(e.target.value, 10) || 1)}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-700 block">Region Preset</label>
+                <select
+                  value={markupPreset}
+                  onChange={(e) => setMarkupPreset(e.target.value as any)}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white"
+                >
+                  <option value="title">Document Title Region</option>
+                  <option value="header">Top Header Region</option>
+                  <option value="body">Body Section</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-stone-100 flex items-center justify-between">
+              <span className="text-xs text-stone-500">Processed locally in browser.</span>
+              <button
+                onClick={handleApplyMarkup}
+                disabled={isProcessing}
+                className="px-5 py-2.5 rounded-full text-xs font-bold bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50 cursor-pointer"
+              >
+                Apply Markup
+              </button>
+            </div>
+          </div>
+
+          <div className="lg:col-span-5 bg-stone-100 rounded-3xl border border-stone-200/90 p-6 flex flex-col justify-between">
+            <div>
+              <h4 className="text-xs font-bold text-stone-800 uppercase tracking-wider">Markup Sample</h4>
+              <div className="mt-6 mx-auto w-48 h-64 bg-white rounded-lg shadow-sm border border-stone-300 relative p-3 flex flex-col justify-start gap-4 overflow-hidden">
+                <div className="space-y-2 pt-2">
+                  <div
+                    className={`h-4 rounded-xs ${
+                      markupType === 'highlight'
+                        ? 'bg-amber-300/60'
+                        : markupType === 'underline'
+                        ? 'border-b-2 border-blue-500 bg-transparent'
+                        : markupType === 'box'
+                        ? 'border-2 border-emerald-500 bg-transparent'
+                        : 'border-b-2 border-red-500 bg-transparent'
+                    } w-3/4 flex items-center px-1 text-[8px] font-bold text-stone-700`}
+                  >
+                    Sample Marked Line
+                  </div>
+                  <div className="h-1.5 bg-stone-200 rounded-sm w-full"></div>
+                  <div className="h-1.5 bg-stone-200 rounded-sm w-5/6"></div>
                 </div>
               </div>
             </div>
