@@ -86,15 +86,15 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
       });
 
       if (updated.data) {
-        await onUpdateDocumentData(updated.data, updated.pageCount, 'Vector Redaction');
+        await onUpdateDocumentData(updated.data, updated.pageCount, 'Visual Blackout');
         setSuccessBanner(
-          `Page ${targetPage} redacted with opaque blackout vector box${
+          `Page ${targetPage} overlaid with opaque blackout vector box${
             sanitizeMetadata ? ' and document metadata purged' : ''
-          }.`
+          }. (Notice: Underlying text streams remain extractable; see truth boundary).`
         );
       }
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Redaction failed');
+      setErrorMsg(err instanceof Error ? err.message : 'Visual blackout failed');
     } finally {
       setIsProcessing(false);
     }
@@ -112,7 +112,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
       <div className="bg-white rounded-2xl border border-stone-200/90 p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Shield className="w-5 h-5 text-orange-600" />
-          <h2 className="text-base font-bold text-stone-900">Document Security & Redaction</h2>
+          <h2 className="text-base font-bold text-stone-900">Document Security & Visual Blackout</h2>
         </div>
 
         <button
@@ -146,14 +146,20 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <EyeOff className="w-4 h-4 text-stone-900" />
-                <h3 className="text-sm font-bold text-stone-900">Vector Blackout Redaction</h3>
+                <h3 className="text-sm font-bold text-stone-900">Visual Blackout Mask (Vector Overlay)</h3>
                 <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
                   Local Available
                 </span>
               </div>
               <p className="text-xs text-stone-500 mt-1">
-                Permanently burn solid black opaque rectangles over sensitive content and sanitize metadata to protect confidentiality.
+                Overlay solid black opaque vector rectangles over sensitive visual areas and sanitize document metadata.
               </p>
+              <div className="mt-2.5 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 flex items-start gap-2">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Security Notice:</strong> Visual blackout obscures rendering on screens and printouts. However, underlying PDF text streams and font glyphs are not stripped. If you require irreversible text destruction, see True Structural Redaction on the roadmap.
+                </span>
+              </div>
             </div>
 
             <div className="space-y-4 pt-3 border-t border-stone-100">
@@ -245,7 +251,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
                 disabled={isProcessing}
                 className="w-full py-2.5 rounded-xl text-xs font-bold bg-stone-900 text-white hover:bg-stone-800 transition-all shadow-xs disabled:opacity-50 cursor-pointer"
               >
-                {isProcessing ? 'Redacting...' : 'Apply Permanent Redaction'}
+                {isProcessing ? 'Applying Blackout...' : 'Apply Visual Blackout & Sanitize Metadata'}
               </button>
             </div>
           </div>
@@ -259,6 +265,21 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
             </h3>
 
             <div className="space-y-3 text-xs">
+              <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-100 space-y-1">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-bold text-stone-800">
+                    <EyeOff className="w-3.5 h-3.5 text-stone-500" />
+                    <span>True Structural Redaction</span>
+                  </div>
+                  <span className="text-[10px] font-bold text-stone-500 bg-stone-200/70 px-2 py-0.5 rounded-full">
+                    Roadmap (QPDF)
+                  </span>
+                </div>
+                <p className="text-stone-500 text-[11px] leading-relaxed">
+                  Irreversible destruction of underlying text objects, font glyphs, and indirect stream tokens across pages requires low-level PDF parsing (QPDF/WASM). Visual Blackout obscures visible rendering but does not delete underlying stream objects.
+                </p>
+              </div>
+
               <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-100 space-y-1">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 font-bold text-stone-800">

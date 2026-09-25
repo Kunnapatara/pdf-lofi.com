@@ -1239,13 +1239,13 @@ export const EditTab: React.FC<EditTabProps> = ({
         </div>
       )}
 
-      {/* Sub-tool 7: Vector Markup */}
+      {/* Sub-tool 7: Visual Markup Overlay */}
       {activeSubTool === 'markup' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-7 bg-white rounded-3xl border border-stone-200/90 p-6 shadow-xs space-y-4">
-            <h3 className="text-sm font-bold text-stone-900">Vector Markup & Annotations</h3>
+            <h3 className="text-sm font-bold text-stone-900">Visual Markup Overlay</h3>
             <p className="text-xs text-stone-500">
-              Add highlight stripes, underline rules, or outline boxes directly to document streams.
+              Add visual highlight stripes, underline rules, or outline boxes directly to page streams (visual vector overlay; not PDF /Annot objects).
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-stone-100">

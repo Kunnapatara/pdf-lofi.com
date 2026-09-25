@@ -62,7 +62,9 @@ export const OptimizeTab: React.FC<OptimizeTabProps> = ({
 
       setCompressionResult(res);
       setSuccessBanner(
-        `Optimized! Size reduced by ${res.percentageSaved}% (saved ${formatBytes(res.savedBytes)}).`
+        res.savedBytes > 0
+          ? `Optimized! Size reduced by ${res.percentageSaved}% (saved ${formatBytes(res.savedBytes)}).`
+          : 'Stream optimization complete. Object streams re-encoded; document was already compactly compressed.'
       );
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Compression failed');

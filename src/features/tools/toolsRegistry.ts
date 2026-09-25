@@ -266,13 +266,13 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
   {
     id: 'signature-pdf',
     name: 'Signature Image',
-    shortDescription: 'Draw or upload an electronic signature image and place it onto document pages.',
+    shortDescription: 'Place electronic signature images or drawings onto pages (image overlay; not a cryptographic digital certificate).',
     category: 'edit',
     status: 'available',
     processingLocation: 'local',
     routeView: 'edit',
     workspaceTab: 'edit',
-    keywords: ['sign', 'signature', 'draw', 'sign pdf', 'e-sign', 'image signature'],
+    keywords: ['sign', 'signature', 'draw', 'sign pdf', 'e-sign', 'image signature', 'overlay'],
   },
   {
     id: 'insert-image',
@@ -298,14 +298,14 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
   },
   {
     id: 'markup-pdf',
-    name: 'Markup & Highlight',
-    shortDescription: 'Add vector highlights, underline rules, strike-throughs, and bounding boxes.',
+    name: 'Visual Markup Overlay',
+    shortDescription: 'Add visual vector highlights, underline rules, strike-throughs, and bounding boxes to page streams (visual overlay; not PDF /Annot objects).',
     category: 'edit',
     status: 'available',
     processingLocation: 'local',
     routeView: 'edit',
     workspaceTab: 'edit',
-    keywords: ['markup', 'highlight', 'underline', 'box', 'annotate', 'pen'],
+    keywords: ['markup', 'highlight', 'underline', 'box', 'annotate', 'pen', 'visual overlay'],
   },
 
   // ==========================================
@@ -534,14 +534,26 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
   // ==========================================
   {
     id: 'redact-pdf',
-    name: 'Redaction (Vector Blackout)',
-    shortDescription: 'Burn permanent opaque blackout rectangles over sensitive page areas and purge metadata.',
+    name: 'Visual Blackout (Vector Mask)',
+    shortDescription: 'Overlay opaque black vector rectangles over sensitive areas and sanitize metadata. Note: Does not delete underlying text streams.',
     category: 'security',
     status: 'available',
     processingLocation: 'local',
     routeView: 'security',
     workspaceTab: 'security',
-    keywords: ['redact', 'blackout', 'censor', 'mask', 'confidential', 'sanitize'],
+    keywords: ['redact', 'blackout', 'censor', 'mask', 'confidential', 'sanitize', 'visual blackout'],
+  },
+  {
+    id: 'structural-redaction',
+    name: 'True Structural Redaction',
+    shortDescription: 'Irreversible glyph and content-stream token destruction via deep PDF parsing (Roadmap).',
+    category: 'security',
+    status: 'coming_soon',
+    badge: 'Roadmap (QPDF)',
+    processingLocation: 'local',
+    routeView: 'security',
+    workspaceTab: 'security',
+    keywords: ['true redaction', 'structural redaction', 'irreversible', 'glyph strip'],
   },
   {
     id: 'protect-pdf',
@@ -610,7 +622,7 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
   {
     id: 'compress-pdf',
     name: 'Compress PDF (Stream Optimization)',
-    shortDescription: 'Flate object stream optimizer and metadata stripper to reduce file size. Note: does not downsample raster images.',
+    shortDescription: 'Flate object stream optimizer and metadata stripper. Re-encodes PDF indirect object streams; does not downsample raster images or guarantee smaller file size for already-compressed PDFs.',
     category: 'optimize',
     status: 'available',
     processingLocation: 'local',

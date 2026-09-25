@@ -538,7 +538,7 @@ async function runAllTests() {
   }
 
   // ==========================================
-  // Test 15: Signature Image / Insert Image (XObject Embedding)
+  // Test 15: Signature Image / Insert Image (XObject Embedding & Text Preservation)
   // ==========================================
   try {
     const doc = await createLabeledFixture(['SIGN_BELOW']);
@@ -566,10 +566,14 @@ async function runAllTests() {
       }
     }
 
+    // Verify underlying page text remains intact and extractable
+    const pageText = await extractPageText(inserted.data, 1);
+    const textIntact = pageText.includes('SIGN_BELOW');
+
     assert(
-      hasImageStream,
+      hasImageStream && textIntact,
       'Insert Signature / Image',
-      `Image /Subtype /Image XObject confirmed in reloaded PDF indirect stream table`
+      `Image /Subtype /Image XObject confirmed in stream table; underlying text stream intact ("${pageText.trim()}")`
     );
   } catch (e: any) {
     assert(false, 'Insert Signature / Image', e.message);
@@ -688,13 +692,19 @@ async function runAllTests() {
     const compRes = await executeCompressPdf(doc, { stripMetadata: true, compressStreams: true });
     const reloaded = await PDFDocument.load(compRes.data);
 
-    // Verify valid reloaded structure without false universal shrinkage assertion
+    // Verify valid reloaded structure
     const validPdf = reloaded.getPageCount() === 3 && compRes.data.length > 100;
 
+    // Verify readable text stream preservation across all pages
+    const t1 = await extractPageText(compRes.data, 1);
+    const t2 = await extractPageText(compRes.data, 2);
+    const t3 = await extractPageText(compRes.data, 3);
+    const textPreserved = t1.includes('STREAM_OPT_1') && t2.includes('STREAM_OPT_2') && t3.includes('STREAM_OPT_3');
+
     assert(
-      validPdf,
+      validPdf && textPreserved,
       'Compress PDF (Stream Optimization)',
-      `Streams re-encoded; original: ${compRes.originalSize}B, compressed: ${compRes.compressedSize}B, valid PDF`
+      `Streams re-encoded; text content 100% readable across all pages; original: ${compRes.originalSize}B, compressed: ${compRes.compressedSize}B, valid PDF`
     );
   } catch (e: any) {
     assert(false, 'Compress PDF (Stream Optimization)', e.message);
@@ -778,10 +788,10 @@ async function runAllTests() {
   }
 
   // ==========================================
-  // Test 23: Vector Markup (Highlight & Underline)
+  // Test 23: Visual Markup Overlay (Highlight & Underline)
   // ==========================================
   try {
-    const doc = await createLabeledFixture(['LEGAL_TERMS_SECTION']);
+    const doc = await createLabeledFixture(['PAGE_1_LEGAL_TERMS', 'PAGE_2_UNTOUCHED_CONTENT']);
     const marked = await applyMarkup(doc, {
       type: 'highlight',
       targetPages: [1],
@@ -789,24 +799,46 @@ async function runAllTests() {
     });
 
     const reloaded = await PDFDocument.load(marked.data);
-    const valid = reloaded.getPageCount() === 1 && marked.data.byteLength > doc.byteLength;
+    const validCount = reloaded.getPageCount() === 2;
+
+    // Verify underlying text on target page remains readable and intact
+    const p1Text = await extractPageText(marked.data, 1);
+    const p1Intact = p1Text.includes('PAGE_1_LEGAL_TERMS');
+
+    // Verify unrelated page remains unchanged
+    const p2Text = await extractPageText(marked.data, 2);
+    const p2Intact = p2Text.includes('PAGE_2_UNTOUCHED_CONTENT');
+
+    // Verify stream was modified with vector draw operations
+    const streamModified = marked.data.byteLength > doc.byteLength;
+
+    // Verify it is a visual vector overlay on the content stream, not an /Annot object
+    const p1Annots = reloaded.getPage(0).node.Annots();
+    const isVisualOverlay = !p1Annots || p1Annots.size() === 0;
 
     assert(
-      valid,
-      'Vector Markup (Highlight Annotation)',
-      `Vector highlight rectangle embedded into page stream; valid ${reloaded.getPageCount()} page PDF`
+      validCount && p1Intact && p2Intact && streamModified && isVisualOverlay,
+      'Visual Markup Overlay',
+      `Visual vector highlight overlay embedded into page stream; text intact on target & untouched pages; 0 /Annot objects`
     );
   } catch (e: any) {
-    assert(false, 'Vector Markup (Highlight Annotation)', e.message);
+    assert(false, 'Visual Markup Overlay', e.message);
   }
 
   // ==========================================
-  // Test 24: Vector Redaction & Metadata Sanitization
+  // Test 24: Visual Blackout (Vector Mask) & Metadata Sanitization
   // ==========================================
+  let secretExtractedAfterBlackout = false;
   try {
-    const doc = await createLabeledFixture(['SECRET_ACCOUNT_NUMBER_12345']);
-    const redacted = await applyRedaction(doc, {
-      boxes: [{ pageNumber: 1, x: 50, y: 700, width: 350, height: 30 }],
+    const fixtureDoc = await PDFDocument.create();
+    const font = await fixtureDoc.embedFont(StandardFonts.Helvetica);
+    const page = fixtureDoc.addPage([600, 800]);
+    page.drawText('PUBLIC_CONTENT_PREFIX', { x: 50, y: 750, font, size: 16, color: rgb(0.1, 0.1, 0.1) });
+    page.drawText('PDF_LOFI_REDACTION_SECRET_9F72A', { x: 50, y: 700, font, size: 16, color: rgb(0.1, 0.1, 0.1) });
+    const docBytes = await fixtureDoc.save();
+
+    const redacted = await applyRedaction(docBytes, {
+      boxes: [{ pageNumber: 1, x: 40, y: 690, width: 400, height: 30 }],
       sanitizeMetadata: true,
     });
 
@@ -814,14 +846,40 @@ async function runAllTests() {
     const titleEmpty = !reloaded.getTitle();
     const authorEmpty = !reloaded.getAuthor();
     const validPages = reloaded.getPageCount() === 1;
+    const streamHasBlackout = redacted.data.byteLength > docBytes.byteLength;
+
+    // Extract text from the page
+    const extracted = await extractPageText(redacted.data, 1);
+    secretExtractedAfterBlackout = extracted.includes('PDF_LOFI_REDACTION_SECRET_9F72A');
+    const publicDataPresent = extracted.includes('PUBLIC_CONTENT_PREFIX');
 
     assert(
-      validPages && titleEmpty && authorEmpty,
-      'Vector Redaction & Metadata Sanitization',
-      `Opaque blackout vector box applied and metadata purged (Title: "${reloaded.getTitle() || ''}", Author: "${reloaded.getAuthor() || ''}")`
+      validPages && titleEmpty && authorEmpty && streamHasBlackout && publicDataPresent,
+      'Visual Blackout (Vector Mask) & Sanitization',
+      `Opaque blackout vector box applied to page stream and metadata purged (Title: "${reloaded.getTitle() || ''}", Author: "${reloaded.getAuthor() || ''}")`
     );
   } catch (e: any) {
-    assert(false, 'Vector Redaction & Metadata Sanitization', e.message);
+    assert(false, 'Visual Blackout (Vector Mask) & Sanitization', e.message);
+  }
+
+  // ==========================================
+  // Test 25: Redaction Semantic Truth Audit (Irreversible vs Visual Blackout)
+  // ==========================================
+  try {
+    // In accordance with Section 3.A of the Hardening Sprint:
+    // Objectively verify whether drawing a black rectangle deletes underlying stream text.
+    // In pdf-lib, page.drawRectangle overlays a vector box but leaves the Tj/TJ text operator intact.
+    // Therefore, extracted text STILL contains the secret string!
+    // This proves Option B: Visual Blackout must NOT be marketed as irreversible structural redaction.
+    const leavesTextIntact = secretExtractedAfterBlackout === true;
+
+    assert(
+      leavesTextIntact,
+      'Redaction Semantic Truth Audit',
+      `Proven that visual blackout leaves underlying secret ("PDF_LOFI_REDACTION_SECRET_9F72A") extractable in content stream. Truthfully designated as Visual Blackout Overlay; True Structural Redaction marked as Roadmap.`
+    );
+  } catch (e: any) {
+    assert(false, 'Redaction Semantic Truth Audit', e.message);
   }
 
   // ==========================================
