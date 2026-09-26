@@ -132,6 +132,7 @@ class SaaSStore {
       cancelAtPeriodEnd: false,
       createdAt: Date.now() - 86400000 * 7,
       updatedAt: Date.now(),
+      lemonSqueezyUpdatedAt: null,
     };
 
     const defaultUsage: UserUsage = {
@@ -241,6 +242,7 @@ class SaaSStore {
       cancelAtPeriodEnd: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      lemonSqueezyUpdatedAt: null,
     };
     this.state.subscriptions[userId] = freeSub;
     this.persist();

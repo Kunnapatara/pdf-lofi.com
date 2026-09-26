@@ -1083,6 +1083,323 @@ async function runAllTests() {
     assert(false, 'Merge Capacity Entitlement Verification', e.message);
   }
 
+  // ==========================================
+  // Test 24: Session Secret Hardening (Production Isolation & Fail-Closed)
+  // ==========================================
+  try {
+    const { getSessionSecret, createSignedSessionToken, verifySignedSessionToken } = await import(
+      './src/server/auth/session'
+    );
+
+    const origEnv = { ...process.env };
+
+    try {
+      // 1. Production with explicit SESSION_SECRET -> Works
+      process.env.NODE_ENV = 'production';
+      process.env.SESSION_SECRET = 'super-secret-production-key-32-chars-long';
+      delete process.env.LEMON_SQUEEZY_WEBHOOK_SECRET;
+
+      const prodToken = createSignedSessionToken('prod_user_1');
+      const prodPayload = verifySignedSessionToken(prodToken);
+      const prodWorks = prodPayload !== null && prodPayload.userId === 'prod_user_1';
+
+      // 2. Production with missing SESSION_SECRET -> Fails Closed
+      delete process.env.SESSION_SECRET;
+      let missingSecretCaught = false;
+      try {
+        createSignedSessionToken('prod_user_2');
+      } catch (err: any) {
+        missingSecretCaught = err.message.includes('SESSION_SECRET must be explicitly configured in production');
+      }
+      const missingVerifyFailsClosed = verifySignedSessionToken(prodToken) === null;
+
+      // 3. Production: LEMON_SQUEEZY_WEBHOOK_SECRET cannot substitute for SESSION_SECRET
+      process.env.LEMON_SQUEEZY_WEBHOOK_SECRET = 'webhook-secret-not-session-secret';
+      let webhookSubstituteCaught = false;
+      try {
+        createSignedSessionToken('prod_user_3');
+      } catch (err: any) {
+        webhookSubstituteCaught = err.message.includes('SESSION_SECRET must be explicitly configured in production');
+      }
+
+      // 4. Development mode: functional fallback preserved
+      process.env.NODE_ENV = 'development';
+      delete process.env.SESSION_SECRET;
+      delete process.env.LEMON_SQUEEZY_WEBHOOK_SECRET;
+      const devSecret = getSessionSecret();
+      const devToken = createSignedSessionToken('dev_user_1');
+      const devPayload = verifySignedSessionToken(devToken);
+      const devWorks =
+        devSecret === 'pdf-lofi-dev-session-secret-key-32-chars-long' &&
+        devPayload !== null &&
+        devPayload.userId === 'dev_user_1';
+
+      assert(
+        prodWorks && missingSecretCaught && missingVerifyFailsClosed && webhookSubstituteCaught && devWorks,
+        'Session Secret Production Hardening',
+        'Production strictly requires SESSION_SECRET; webhook secret cannot substitute; dev fallback isolated'
+      );
+    } finally {
+      process.env = origEnv;
+    }
+  } catch (e: any) {
+    assert(false, 'Session Secret Production Hardening', e.message);
+  }
+
+  // ==========================================
+  // Test 25: Webhook Ownership Security (Fail-Closed, Email Fallback Removed)
+  // ==========================================
+  try {
+    const { processLemonSqueezyWebhook } = await import('./src/server/lemonSqueezy/webhooks');
+    const { saasStore } = await import('./src/server/storage/saasStore');
+
+    // Create test users
+    const testUserA = saasStore.saveUser({
+      id: `usr_test_a_${Date.now()}`,
+      email: `alice_${Date.now()}@test.com`,
+      name: 'Alice Audit',
+      createdAt: Date.now(),
+    });
+
+    const testUserB = saasStore.saveUser({
+      id: `usr_test_b_${Date.now()}`,
+      email: `bob_${Date.now()}@test.com`,
+      name: 'Bob Audit',
+      createdAt: Date.now(),
+    });
+
+    // 1. Valid custom_data.user_id resolves correctly
+    const evt1Result = await processLemonSqueezyWebhook(
+      {
+        meta: {
+          event_name: 'subscription_created',
+          custom_data: { user_id: testUserA.id },
+        },
+        data: {
+          id: `sub_prov_${Date.now()}_1`,
+          attributes: {
+            status: 'active',
+            customer_id: `cust_${Date.now()}_1`,
+            variant_id: 'var_pro_test',
+            updated_at: '2026-09-26T12:00:00.000Z',
+          },
+        },
+      },
+      `evt_ownership_1_${Date.now()}`
+    );
+
+    const userASub = saasStore.getSubscription(testUserA.id);
+    const customDataResolves = evt1Result.status === 'processed' && userASub.planId === 'pro';
+
+    // 2. Existing subscription ID resolves correctly for lifecycle updates
+    const evt2Result = await processLemonSqueezyWebhook(
+      {
+        meta: { event_name: 'subscription_updated' },
+        data: {
+          id: userASub.lemonSqueezySubscriptionId,
+          attributes: {
+            status: 'active',
+            variant_id: 'var_pro_test',
+            updated_at: '2026-09-26T12:05:00.000Z',
+          },
+        },
+      },
+      `evt_ownership_2_${Date.now()}`
+    );
+    const subIdResolves = evt2Result.status === 'processed';
+
+    // 3. Existing customer ID resolves correctly
+    const evt3Result = await processLemonSqueezyWebhook(
+      {
+        meta: { event_name: 'subscription_updated' },
+        data: {
+          id: `sub_prov_renew_${Date.now()}`,
+          attributes: {
+            status: 'active',
+            customer_id: userASub.lemonSqueezyCustomerId,
+            variant_id: 'var_pro_test',
+            updated_at: '2026-09-26T12:10:00.000Z',
+          },
+        },
+      },
+      `evt_ownership_3_${Date.now()}`
+    );
+    const customerIdResolves = evt3Result.status === 'processed';
+
+    // 4. Unknown user, sub, customer -> QUARANTINED
+    const evt4Result = await processLemonSqueezyWebhook(
+      {
+        meta: { event_name: 'subscription_created' },
+        data: {
+          id: `sub_unknown_${Date.now()}`,
+          attributes: {
+            status: 'active',
+            customer_id: `cust_unknown_${Date.now()}`,
+            variant_id: 'var_pro_test',
+            updated_at: '2026-09-26T12:15:00.000Z',
+          },
+        },
+      },
+      `evt_ownership_4_${Date.now()}`
+    );
+    const unresolvableQuarantined = evt4Result.status === 'quarantined';
+
+    // 5. Email-only match MUST NOT grant entitlement (email fallback removed)
+    const evt5Result = await processLemonSqueezyWebhook(
+      {
+        meta: { event_name: 'subscription_created' },
+        data: {
+          id: `sub_email_spoof_${Date.now()}`,
+          attributes: {
+            status: 'active',
+            customer_id: `cust_spoof_${Date.now()}`,
+            user_email: testUserB.email, // Bob's email provided by external webhook
+            variant_id: 'var_pro_test',
+            updated_at: '2026-09-26T12:20:00.000Z',
+          },
+        },
+      },
+      `evt_ownership_5_${Date.now()}`
+    );
+
+    const userBSub = saasStore.getSubscription(testUserB.id);
+    const emailFallbackBlocked =
+      evt5Result.status === 'quarantined' && userBSub.planId === 'free' && userBSub.status === 'active';
+
+    assert(
+      customDataResolves && subIdResolves && customerIdResolves && unresolvableQuarantined && emailFallbackBlocked,
+      'Webhook Ownership Security (Email Fallback Removed)',
+      'custom_data, sub ID, and customer ID resolve safely; email-only match quarantined; User B protected'
+    );
+  } catch (e: any) {
+    assert(false, 'Webhook Ownership Security (Email Fallback Removed)', e.message);
+  }
+
+  // ==========================================
+  // Test 26: Webhook Event Ordering & Stale Event Protection
+  // ==========================================
+  try {
+    const { processLemonSqueezyWebhook } = await import('./src/server/lemonSqueezy/webhooks');
+    const { saasStore } = await import('./src/server/storage/saasStore');
+
+    const testUserC = saasStore.saveUser({
+      id: `usr_test_c_${Date.now()}`,
+      email: `ordering_${Date.now()}@test.com`,
+      name: 'Charlie Ordering',
+      createdAt: Date.now(),
+    });
+
+    const providerSubId = `sub_order_test_${Date.now()}`;
+
+    // 1. Initial subscription_created (12:00:00Z) -> Active Pro
+    const eventCreate = await processLemonSqueezyWebhook(
+      {
+        meta: {
+          event_name: 'subscription_created',
+          custom_data: { user_id: testUserC.id },
+        },
+        data: {
+          id: providerSubId,
+          attributes: {
+            status: 'active',
+            variant_id: 'var_pro_test',
+            updated_at: '2026-09-26T12:00:00.000Z',
+          },
+        },
+      },
+      `evt_order_1_${Date.now()}`
+    );
+
+    const subStep1 = saasStore.getSubscription(testUserC.id);
+    const step1Ok = eventCreate.status === 'processed' && subStep1.planId === 'pro' && subStep1.status === 'active';
+
+    // 2. Newer event: subscription_expired (14:00:00Z) -> Expired Free
+    const eventExpire = await processLemonSqueezyWebhook(
+      {
+        meta: { event_name: 'subscription_expired' },
+        data: {
+          id: providerSubId,
+          attributes: {
+            status: 'expired',
+            variant_id: 'var_pro_test',
+            updated_at: '2026-09-26T14:00:00.000Z',
+          },
+        },
+      },
+      `evt_order_2_${Date.now()}`
+    );
+
+    const subStep2 = saasStore.getSubscription(testUserC.id);
+    const step2Ok = eventExpire.status === 'processed' && subStep2.planId === 'free' && subStep2.status === 'expired';
+
+    // 3. Stale delayed event: subscription_updated (13:30:00Z) -> MUST BE IGNORED
+    const eventStale = await processLemonSqueezyWebhook(
+      {
+        meta: { event_name: 'subscription_updated' },
+        data: {
+          id: providerSubId,
+          attributes: {
+            status: 'active',
+            variant_id: 'var_pro_test',
+            updated_at: '2026-09-26T13:30:00.000Z', // 30 minutes older than expiration
+          },
+        },
+      },
+      `evt_order_3_${Date.now()}`
+    );
+
+    const subStep3 = saasStore.getSubscription(testUserC.id);
+    const step3Ok =
+      eventStale.status === 'ignored' &&
+      eventStale.message.includes('stale') &&
+      subStep3.planId === 'free' &&
+      subStep3.status === 'expired'; // Pro was NOT reactivated
+
+    // 4. Duplicate event -> Idempotent
+    const eventDuplicate = await processLemonSqueezyWebhook(
+      {
+        meta: { event_name: 'subscription_expired' },
+        data: {
+          id: providerSubId,
+          attributes: {
+            status: 'expired',
+            variant_id: 'var_pro_test',
+            updated_at: '2026-09-26T14:00:00.000Z',
+          },
+        },
+      },
+      `evt_order_2_${Date.now()}` // Same event ID as step 2
+    );
+    const step4Ok = eventDuplicate.status === 'already_processed';
+
+    // 5. Subsequent valid newer event: subscription_resumed (15:00:00Z) -> Active Pro
+    const eventResume = await processLemonSqueezyWebhook(
+      {
+        meta: { event_name: 'subscription_resumed' },
+        data: {
+          id: providerSubId,
+          attributes: {
+            status: 'active',
+            variant_id: 'var_pro_test',
+            updated_at: '2026-09-26T15:00:00.000Z',
+          },
+        },
+      },
+      `evt_order_5_${Date.now()}`
+    );
+
+    const subStep5 = saasStore.getSubscription(testUserC.id);
+    const step5Ok = eventResume.status === 'processed' && subStep5.planId === 'pro' && subStep5.status === 'active';
+
+    assert(
+      step1Ok && step2Ok && step3Ok && step4Ok && step5Ok,
+      'Webhook Event Ordering & Stale Event Protection',
+      'Out-of-order stale events ignored without mutating state; Pro cannot be reactivated by older event; idempotency preserved'
+    );
+  } catch (e: any) {
+    assert(false, 'Webhook Event Ordering & Stale Event Protection', e.message);
+  }
+
   console.log('\n--- FINAL TEST SUMMARY ---');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`Passed: ${passedCount} / ${results.length}`);

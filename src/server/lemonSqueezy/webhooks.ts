@@ -156,13 +156,9 @@ export async function processLemonSqueezyWebhook(
           }
         }
 
-        // Fallback: look up by user email matching customer email in webhook attributes
-        if (!targetUserId && attrs.user_email && typeof attrs.user_email === 'string') {
-          const userCandidate = saasStore.findUserByEmail(attrs.user_email);
-          if (userCandidate) {
-            targetUserId = userCandidate.id;
-          }
-        }
+        // Note: Email matching is strictly excluded from ownership resolution.
+        // An email address is not proof of billing account ownership.
+        // If unresolved via custom_data, subscription ID, or customer ID: quarantine.
 
         // SAFE BOUNDARY: If internal user cannot be resolved, QUARANTINE event.
         // DO NOT silently fall back to default user or grant Pro to random accounts!
@@ -179,7 +175,35 @@ export async function processLemonSqueezyWebhook(
 
         const currentSub = saasStore.getSubscription(targetUserId);
 
-        // 3. Variant ID & Plan Validation
+        // 3. Provider Timestamp & Out-of-Order Stale Event Guard
+        const providerTimestampStr =
+          attrs.updated_at ||
+          attrs.created_at ||
+          (typeof payload?.meta?.created_at === 'string' ? payload.meta.created_at : null);
+        const providerTimestamp = providerTimestampStr ? Date.parse(providerTimestampStr) : null;
+        const hasValidProviderTimestamp =
+          typeof providerTimestamp === 'number' && !isNaN(providerTimestamp);
+
+        // If the current subscription already has a provider timestamp and the incoming event
+        // has an older provider timestamp, ignore the stale event without mutating state.
+        if (
+          currentSub.lemonSqueezyUpdatedAt &&
+          hasValidProviderTimestamp &&
+          providerTimestamp < currentSub.lemonSqueezyUpdatedAt
+        ) {
+          console.warn(
+            `[Webhook Stale] Event ${eventId} (${eventName}) provider timestamp (${providerTimestampStr}) is older than stored subscription state (${new Date(
+              currentSub.lemonSqueezyUpdatedAt
+            ).toISOString()}). Ignoring stale event.`
+          );
+          saasStore.recordWebhookProcessed(eventId, eventName, 'ignored');
+          return {
+            status: 'ignored',
+            message: `Event ${eventName} ignored as stale: provider timestamp (${providerTimestampStr}) is older than stored subscription state.`,
+          };
+        }
+
+        // 4. Variant ID & Plan Validation
         // If pro variant ID is configured, ensure variant matches before granting Pro.
         let isProVariant = false;
         if (config.hasProVariantId && config.proVariantId && variantId) {
@@ -206,6 +230,9 @@ export async function processLemonSqueezyWebhook(
           trialEndsAt: attrs.trial_ends_at || null,
           isPaused: Boolean(attrs.is_paused),
           cancelAtPeriodEnd: Boolean(attrs.cancelled),
+          lemonSqueezyUpdatedAt: hasValidProviderTimestamp
+            ? providerTimestamp
+            : (currentSub.lemonSqueezyUpdatedAt || Date.now()),
         };
 
         saasStore.updateSubscription(updatedSub);

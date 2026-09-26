@@ -70,6 +70,7 @@ export interface UserSubscription {
   cancelAtPeriodEnd: boolean;
   createdAt: number;
   updatedAt: number;
+  lemonSqueezyUpdatedAt?: number | null;
 }
 
 export interface UsageEvent {

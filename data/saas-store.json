@@ -29,6 +29,42 @@
       "email": "creator_179032@pdf-lofi.com",
       "name": "PDF Creator",
       "createdAt": 1790321215365
+    },
+    "usr_1790429904522_nbrzz": {
+      "id": "usr_1790429904522_nbrzz",
+      "email": "creator_179042@pdf-lofi.com",
+      "name": "PDF Creator",
+      "createdAt": 1790429904522
+    },
+    "usr_1790431372439_77jzl": {
+      "id": "usr_1790431372439_77jzl",
+      "email": "creator_179043@pdf-lofi.com",
+      "name": "PDF Creator",
+      "createdAt": 1790431372439
+    },
+    "usr_1790431601813_cy2ez": {
+      "id": "usr_1790431601813_cy2ez",
+      "email": "creator_179043@pdf-lofi.com",
+      "name": "PDF Creator",
+      "createdAt": 1790431601813
+    },
+    "usr_test_a_1790432526678": {
+      "id": "usr_test_a_1790432526678",
+      "email": "alice_1790432526678@test.com",
+      "name": "Alice Audit",
+      "createdAt": 1790432526678
+    },
+    "usr_test_b_1790432526678": {
+      "id": "usr_test_b_1790432526678",
+      "email": "bob_1790432526678@test.com",
+      "name": "Bob Audit",
+      "createdAt": 1790432526678
+    },
+    "usr_test_c_1790432526681": {
+      "id": "usr_test_c_1790432526681",
+      "email": "ordering_1790432526681@test.com",
+      "name": "Charlie Ordering",
+      "createdAt": 1790432526681
     }
   },
   "subscriptions": {
@@ -82,6 +118,60 @@
       "cancelAtPeriodEnd": false,
       "createdAt": 1790088860424,
       "updatedAt": 1790088860424
+    },
+    "usr_test_a_1790432526678": {
+      "id": "sub_1790432526679_sg4el",
+      "userId": "usr_test_a_1790432526678",
+      "planId": "pro",
+      "status": "active",
+      "lemonSqueezySubscriptionId": "sub_prov_renew_1790432526680",
+      "lemonSqueezyCustomerId": "cust_1790432526678_1",
+      "lemonSqueezyOrderId": null,
+      "lemonSqueezyVariantId": "var_pro_test",
+      "renewsAt": null,
+      "endsAt": null,
+      "trialEndsAt": null,
+      "isPaused": false,
+      "cancelAtPeriodEnd": false,
+      "createdAt": 1790432526679,
+      "updatedAt": 1790432526680,
+      "lemonSqueezyUpdatedAt": 1790424600000
+    },
+    "usr_test_b_1790432526678": {
+      "id": "sub_1790432526680_cs0ra",
+      "userId": "usr_test_b_1790432526678",
+      "planId": "free",
+      "status": "active",
+      "lemonSqueezySubscriptionId": null,
+      "lemonSqueezyCustomerId": null,
+      "lemonSqueezyOrderId": null,
+      "lemonSqueezyVariantId": null,
+      "renewsAt": null,
+      "endsAt": null,
+      "trialEndsAt": null,
+      "isPaused": false,
+      "cancelAtPeriodEnd": false,
+      "createdAt": 1790432526680,
+      "updatedAt": 1790432526680,
+      "lemonSqueezyUpdatedAt": null
+    },
+    "usr_test_c_1790432526681": {
+      "id": "sub_1790432526681_i6qq9",
+      "userId": "usr_test_c_1790432526681",
+      "planId": "pro",
+      "status": "active",
+      "lemonSqueezySubscriptionId": "sub_order_test_1790432526681",
+      "lemonSqueezyCustomerId": null,
+      "lemonSqueezyOrderId": null,
+      "lemonSqueezyVariantId": "var_pro_test",
+      "renewsAt": null,
+      "endsAt": null,
+      "trialEndsAt": null,
+      "isPaused": false,
+      "cancelAtPeriodEnd": false,
+      "createdAt": 1790432526681,
+      "updatedAt": 1790432526682,
+      "lemonSqueezyUpdatedAt": 1790434800000
     }
   },
   "usage": {
@@ -127,6 +217,24 @@
       "creditsRemaining": 10,
       "operationsCount": 0,
       "recentEvents": []
+    },
+    "usr_test_a_1790432526678": {
+      "userId": "usr_test_a_1790432526678",
+      "period": "2026-09",
+      "creditsTotal": 250,
+      "creditsUsed": 0,
+      "creditsRemaining": 250,
+      "operationsCount": 0,
+      "recentEvents": []
+    },
+    "usr_test_c_1790432526681": {
+      "userId": "usr_test_c_1790432526681",
+      "period": "2026-09",
+      "creditsTotal": 250,
+      "creditsUsed": 0,
+      "creditsRemaining": 250,
+      "operationsCount": 0,
+      "recentEvents": []
     }
   },
   "webhookEvents": {
@@ -140,6 +248,60 @@
       "eventId": "test_replay_evt_1",
       "eventName": "subscription_created",
       "processedAt": 1790088873840,
+      "status": "processed"
+    },
+    "evt_ownership_1_1790432526678": {
+      "eventId": "evt_ownership_1_1790432526678",
+      "eventName": "subscription_created",
+      "processedAt": 1790432526679,
+      "status": "processed"
+    },
+    "evt_ownership_2_1790432526679": {
+      "eventId": "evt_ownership_2_1790432526679",
+      "eventName": "subscription_updated",
+      "processedAt": 1790432526679,
+      "status": "processed"
+    },
+    "evt_ownership_3_1790432526680": {
+      "eventId": "evt_ownership_3_1790432526680",
+      "eventName": "subscription_updated",
+      "processedAt": 1790432526680,
+      "status": "processed"
+    },
+    "evt_ownership_4_1790432526680": {
+      "eventId": "evt_ownership_4_1790432526680",
+      "eventName": "subscription_created",
+      "processedAt": 1790432526680,
+      "status": "failed"
+    },
+    "evt_ownership_5_1790432526680": {
+      "eventId": "evt_ownership_5_1790432526680",
+      "eventName": "subscription_created",
+      "processedAt": 1790432526680,
+      "status": "failed"
+    },
+    "evt_order_1_1790432526681": {
+      "eventId": "evt_order_1_1790432526681",
+      "eventName": "subscription_created",
+      "processedAt": 1790432526682,
+      "status": "processed"
+    },
+    "evt_order_2_1790432526682": {
+      "eventId": "evt_order_2_1790432526682",
+      "eventName": "subscription_expired",
+      "processedAt": 1790432526682,
+      "status": "processed"
+    },
+    "evt_order_3_1790432526682": {
+      "eventId": "evt_order_3_1790432526682",
+      "eventName": "subscription_updated",
+      "processedAt": 1790432526682,
+      "status": "ignored"
+    },
+    "evt_order_5_1790432526682": {
+      "eventId": "evt_order_5_1790432526682",
+      "eventName": "subscription_resumed",
+      "processedAt": 1790432526683,
       "status": "processed"
     }
   }

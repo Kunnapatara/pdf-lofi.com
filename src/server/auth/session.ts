@@ -9,11 +9,25 @@ import { Request, Response, NextFunction } from 'express';
 import { saasStore } from '../storage/saasStore';
 import { SaaSUser } from '../../types/saas';
 
-// Derive or generate a server-side session secret
-const SESSION_SECRET =
-  process.env.SESSION_SECRET ||
-  process.env.LEMON_SQUEEZY_WEBHOOK_SECRET ||
-  'pdf-lofi-dev-session-secret-key-32-chars-long';
+// Derive or generate a server-side session secret with strict production isolation
+export function getSessionSecret(): string {
+  const isProd = process.env.NODE_ENV === 'production';
+  const explicitSecret = process.env.SESSION_SECRET?.trim();
+
+  if (isProd) {
+    if (!explicitSecret) {
+      throw new Error(
+        'SESSION_SECRET must be explicitly configured in production environment. Refusing to operate session authentication with insecure or missing fallback.'
+      );
+    }
+    return explicitSecret;
+  }
+
+  // Non-production (development or test runner):
+  // Use explicit secret if set, otherwise use development-only key.
+  // Explicitly NEVER substitute with LEMON_SQUEEZY_WEBHOOK_SECRET.
+  return explicitSecret || 'pdf-lofi-dev-session-secret-key-32-chars-long';
+}
 
 const SESSION_COOKIE_NAME = 'pdf_lofi_session';
 const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -28,6 +42,7 @@ export interface SessionPayload {
  * Creates a tamper-proof signed session token: base64(payload).signature
  */
 export function createSignedSessionToken(userId: string): string {
+  const secret = getSessionSecret();
   const payload: SessionPayload = {
     userId,
     createdAt: Date.now(),
@@ -35,7 +50,7 @@ export function createSignedSessionToken(userId: string): string {
   };
   const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const signature = crypto
-    .createHmac('sha256', SESSION_SECRET)
+    .createHmac('sha256', secret)
     .update(payloadBase64)
     .digest('base64url');
 
@@ -55,8 +70,9 @@ export function verifySignedSessionToken(token?: string | null): SessionPayload 
   const [payloadBase64, signature] = parts;
 
   try {
+    const secret = getSessionSecret();
     const expectedSignature = crypto
-      .createHmac('sha256', SESSION_SECRET)
+      .createHmac('sha256', secret)
       .update(payloadBase64)
       .digest('base64url');
 
@@ -83,7 +99,12 @@ export function verifySignedSessionToken(token?: string | null): SessionPayload 
     }
 
     return payload;
-  } catch {
+  } catch (err) {
+    if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET?.trim()) {
+      console.error(
+        '[Auth Critical] Session token verification rejected: SESSION_SECRET is not configured in production.'
+      );
+    }
     return null;
   }
 }
