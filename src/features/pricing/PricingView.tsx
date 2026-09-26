@@ -115,7 +115,7 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
           Simple, Fair Plans for PDF Artisans
         </h1>
         <p className="text-sm text-stone-600 leading-relaxed">
-          Standard local-first operations are free with generous capacity. Upgrade to Pro for higher-capacity merges of up to 50 files, large documents up to 500 MB, and priority support.
+          Standard local-first operations are free with generous capacity. Upgrade to Pro for merge capacity up to 50 files and large documents up to 500 MB.
         </p>
       </div>
 
@@ -226,12 +226,12 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
             </thead>
             <tbody className="divide-y divide-stone-100 text-stone-700">
               <tr>
-                <td className="py-3 pr-4 font-semibold flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  Local-first processing (Zero document uploads)
+                <td className="py-3 pr-4 font-semibold flex items-start gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Supported local PDF tools process your document directly in your browser. PDF files are not uploaded for these operations.</span>
                 </td>
-                <td className="py-3 px-4 text-emerald-600 font-semibold">Unlimited</td>
-                <td className="py-3 px-4 text-emerald-600 font-semibold">Unlimited</td>
+                <td className="py-3 px-4 text-emerald-600 font-semibold">Included</td>
+                <td className="py-3 px-4 text-emerald-600 font-semibold">Included</td>
               </tr>
               <tr>
                 <td className="py-3 pr-4 font-semibold">Document size capacity</td>
@@ -244,14 +244,9 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
                 <td className="py-3 px-4 font-bold text-stone-900">Designed for up to 1,000 pages</td>
               </tr>
               <tr>
-                <td className="py-3 pr-4 font-semibold">Merge workflow capacity</td>
-                <td className="py-3 px-4">Designed for up to 5 files</td>
-                <td className="py-3 px-4 font-bold text-stone-900">Designed for up to 50 files</td>
-              </tr>
-              <tr>
-                <td className="py-3 pr-4 font-semibold">Customer & developer support</td>
-                <td className="py-3 px-4">Community</td>
-                <td className="py-3 px-4 font-bold text-stone-900">Priority</td>
+                <td className="py-3 pr-4 font-semibold">Merge capacity</td>
+                <td className="py-3 px-4">Merge up to 5 files</td>
+                <td className="py-3 px-4 font-bold text-stone-900">Merge up to 50 files</td>
               </tr>
             </tbody>
           </table>

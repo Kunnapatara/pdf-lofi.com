@@ -17,6 +17,7 @@ import { documentService } from '../../services/documentService';
 import { triggerLocalDownload } from '../../pdf/export/exportService';
 import { getDocumentPageCount } from '../../pdf/rendering/renderService';
 import { generateSamplePdf } from '../../pdf/samplePdf';
+import { EntitlementManager } from '../../services/entitlementService';
 
 interface MergeFileItem {
   id: string;
@@ -30,12 +31,14 @@ interface MergeToolViewProps {
   initialPdf?: { name: string; size: number; pageCount: number; data: Uint8Array };
   onOpenMergedInWorkspace: (data: Uint8Array, name: string, pageCount: number) => void;
   onBackToHome: () => void;
+  onNavigateToPricing?: () => void;
 }
 
 export const MergeToolView: React.FC<MergeToolViewProps> = ({
   initialPdf,
   onOpenMergedInWorkspace,
   onBackToHome,
+  onNavigateToPricing,
 }) => {
   const [files, setFiles] = useState<MergeFileItem[]>(() => {
     if (initialPdf) {
@@ -54,6 +57,7 @@ export const MergeToolView: React.FC<MergeToolViewProps> = ({
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isEntitlementError, setIsEntitlementError] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [mergedResult, setMergedResult] = useState<{
     data: Uint8Array;
@@ -163,11 +167,20 @@ export const MergeToolView: React.FC<MergeToolViewProps> = ({
   const handleExecuteMerge = async () => {
     if (files.length < 2) {
       setErrorMsg('Please select at least 2 PDF files to merge.');
+      setIsEntitlementError(false);
+      return;
+    }
+
+    const validation = EntitlementManager.validateMergeBatch(files.length);
+    if (!validation.allowed) {
+      setErrorMsg(validation.error || 'File limit exceeded for merge.');
+      setIsEntitlementError(!validation.isPro);
       return;
     }
 
     setIsProcessing(true);
     setErrorMsg(null);
+    setIsEntitlementError(false);
     try {
       const pdfBytesList = files.map((f) => f.data);
       const result = await documentService.mergeDocuments(pdfBytesList);
@@ -181,6 +194,7 @@ export const MergeToolView: React.FC<MergeToolViewProps> = ({
       });
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Merge failed');
+      setIsEntitlementError(false);
     } finally {
       setIsProcessing(false);
     }
@@ -241,14 +255,30 @@ export const MergeToolView: React.FC<MergeToolViewProps> = ({
 
       {/* Error notification if any */}
       {errorMsg && (
-        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-2xl text-xs flex items-center justify-between animate-in fade-in">
-          <span>{errorMsg}</span>
-          <button
-            onClick={() => setErrorMsg(null)}
-            className="text-red-500 hover:text-red-800 font-bold ml-3 cursor-pointer"
-          >
-            ✕
-          </button>
+        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-2xl text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <span>{errorMsg}</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {isEntitlementError && onNavigateToPricing && (
+              <button
+                onClick={onNavigateToPricing}
+                className="px-3 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer flex items-center gap-1"
+              >
+                <span>Upgrade to Pro</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setErrorMsg(null);
+                setIsEntitlementError(false);
+              }}
+              className="text-red-500 hover:text-red-800 font-bold ml-2 cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
         </div>
       )}
 

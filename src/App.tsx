@@ -418,6 +418,7 @@ export default function App() {
               }
               onOpenMergedInWorkspace={handleOpenSplitOrMergedDocInWorkspace}
               onBackToHome={() => setCurrentView('home')}
+              onNavigateToPricing={() => setCurrentView('pricing')}
             />
           )}
 

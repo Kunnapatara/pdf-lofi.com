@@ -255,6 +255,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               data: currentDocument.data,
             } : undefined}
             onOpenMergedDoc={onOpenMergedDoc}
+            onNavigateToPricing={() => onNavigateView?.('pricing')}
           />
         )}
 

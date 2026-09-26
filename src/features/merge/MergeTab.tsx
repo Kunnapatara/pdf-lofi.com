@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { GitMerge, Plus, ArrowUp, ArrowDown, Trash2, FileText, Download, CheckCircle2 } from 'lucide-react';
+import { GitMerge, Plus, ArrowUp, ArrowDown, Trash2, FileText, Download, CheckCircle2, ArrowRight } from 'lucide-react';
 import { documentService } from '../../services/documentService';
 import { triggerLocalDownload } from '../../pdf/export/exportService';
 import { getDocumentPageCount } from '../../pdf/rendering/renderService';
 import { ProcessingBadge } from '../../components/status/ProcessingBadge';
+import { EntitlementManager } from '../../services/entitlementService';
 
 interface MergeFileItem {
   id: string;
@@ -16,9 +17,10 @@ interface MergeFileItem {
 interface MergeTabProps {
   initialPdf?: { name: string; size: number; pageCount: number; data: Uint8Array };
   onOpenMergedDoc: (data: Uint8Array, name: string, pageCount: number) => void;
+  onNavigateToPricing?: () => void;
 }
 
-export const MergeTab: React.FC<MergeTabProps> = ({ initialPdf, onOpenMergedDoc }) => {
+export const MergeTab: React.FC<MergeTabProps> = ({ initialPdf, onOpenMergedDoc, onNavigateToPricing }) => {
   const [files, setFiles] = useState<MergeFileItem[]>(() => {
     if (initialPdf) {
       return [
@@ -36,6 +38,7 @@ export const MergeTab: React.FC<MergeTabProps> = ({ initialPdf, onOpenMergedDoc 
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isEntitlementError, setIsEntitlementError] = useState(false);
   const [mergedResult, setMergedResult] = useState<{ data: Uint8Array; pageCount: number; name: string } | null>(null);
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -88,11 +91,20 @@ export const MergeTab: React.FC<MergeTabProps> = ({ initialPdf, onOpenMergedDoc 
   const handleExecuteMerge = async () => {
     if (files.length < 2) {
       setErrorMsg('Please select at least 2 PDF files to merge.');
+      setIsEntitlementError(false);
+      return;
+    }
+
+    const validation = EntitlementManager.validateMergeBatch(files.length);
+    if (!validation.allowed) {
+      setErrorMsg(validation.error || 'File limit exceeded for merge.');
+      setIsEntitlementError(!validation.isPro);
       return;
     }
 
     setIsProcessing(true);
     setErrorMsg(null);
+    setIsEntitlementError(false);
     try {
       const pdfBytesList = files.map((f) => f.data);
       const result = await documentService.mergeDocuments(pdfBytesList);
@@ -105,6 +117,7 @@ export const MergeTab: React.FC<MergeTabProps> = ({ initialPdf, onOpenMergedDoc 
       });
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Merge failed');
+      setIsEntitlementError(false);
     } finally {
       setIsProcessing(false);
     }
@@ -138,8 +151,26 @@ export const MergeTab: React.FC<MergeTabProps> = ({ initialPdf, onOpenMergedDoc 
           state={isProcessing ? 'processing' : errorMsg ? 'error' : mergedResult ? 'completed' : 'idle'}
           operationName="Merging PDF documents locally"
           errorMessage={errorMsg || undefined}
-          onClearError={() => setErrorMsg(null)}
+          onClearError={() => {
+            setErrorMsg(null);
+            setIsEntitlementError(false);
+          }}
         />
+
+        {isEntitlementError && onNavigateToPricing && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-orange-50 border border-orange-200 text-xs animate-in fade-in">
+            <span className="text-orange-950 font-medium">
+              Free plan allows up to 5 files per merge. Upgrade to Pro to merge up to 50 files simultaneously.
+            </span>
+            <button
+              onClick={onNavigateToPricing}
+              className="px-3 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer shrink-0 flex items-center gap-1"
+            >
+              <span>Upgrade to Pro</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Files List Card */}

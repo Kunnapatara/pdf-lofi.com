@@ -170,7 +170,7 @@ export const AccountView: React.FC<AccountViewProps> = ({ onNavigateView }) => {
 
             <p className="text-xs text-stone-600">
               {plan?.description ||
-                'Unlimited client-side document processing with zero uploads to remote servers.'}
+                'Supported local PDF tools process your document directly in your browser. PDF files are not uploaded for these operations.'}
             </p>
 
             {portalNotice && (

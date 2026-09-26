@@ -71,16 +71,31 @@ export class EntitlementManager {
     return { allowed: true, limitMB };
   }
 
-  static validateMergeBatch(fileCount: number): { allowed: boolean; limit: number; error?: string } {
+  static validateMergeBatch(fileCount: number): {
+    allowed: boolean;
+    limit: number;
+    isPro: boolean;
+    error?: string;
+  } {
     const limit = this.getBatchMergeLimit();
+    const isPro = limit >= 50;
     if (fileCount > limit) {
+      if (isPro) {
+        return {
+          allowed: false,
+          limit,
+          isPro: true,
+          error: `You selected ${fileCount} files, which exceeds the Pro maximum limit of ${limit} files per merge operation.`,
+        };
+      }
       return {
         allowed: false,
         limit,
-        error: `You selected ${fileCount} files, but your current plan allows up to ${limit} files per merge. Upgrade to Pro for 50-file batches.`,
+        isPro: false,
+        error: `You selected ${fileCount} files, but the Free Community plan supports merging up to ${limit} files per operation. Upgrade to Pro to merge up to 50 files simultaneously.`,
       };
     }
-    return { allowed: true, limit };
+    return { allowed: true, limit, isPro };
   }
 }
 
