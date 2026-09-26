@@ -122,6 +122,68 @@ billingRouter.post('/usage/record', requireAuth, (req: AuthenticatedRequest, res
 });
 
 /**
+ * Process a checkout request with authoritative server-side single-subscription check.
+ * Blocks duplicate active/trialing/cancelled-in-period Pro subscriptions.
+ */
+export async function handleCheckoutRequest(
+  userId: string,
+  userEmail: string,
+  userName: string,
+  planId: string = 'pro',
+  redirectUrl?: string
+): Promise<{ status: number; body: any }> {
+  const targetPlan = PLANS[planId as 'free' | 'pro'];
+  if (!targetPlan || targetPlan.id === 'free') {
+    return {
+      status: 400,
+      body: {
+        success: false,
+        error: 'Free plan does not require a payment checkout.',
+      },
+    };
+  }
+
+  // Authoritative server-side single-subscription check
+  const currentSub = saasStore.getSubscription(userId);
+  const endsAtTime = currentSub.endsAt ? Date.parse(currentSub.endsAt) : null;
+  const isCancelledInPaidPeriod =
+    currentSub.status === 'cancelled' &&
+    currentSub.planId === 'pro' &&
+    endsAtTime !== null &&
+    !isNaN(endsAtTime) &&
+    endsAtTime > Date.now();
+
+  const isAlreadyActive =
+    currentSub.planId === 'pro' &&
+    (currentSub.status === 'active' ||
+      currentSub.status === 'trialing' ||
+      isCancelledInPaidPeriod);
+
+  if (isAlreadyActive) {
+    return {
+      status: 400,
+      body: {
+        success: false,
+        error: 'An active Pro subscription already exists. Manage your subscription from billing.',
+      },
+    };
+  }
+
+  const result = await createLemonSqueezyCheckout({
+    userId, // Strictly server-derived from authenticated session
+    userEmail,
+    userName,
+    variantId: targetPlan.lemonSqueezyVariantId || undefined,
+    redirectUrl,
+  });
+
+  return {
+    status: 200,
+    body: result,
+  };
+}
+
+/**
  * POST /api/billing/checkout
  * Create Lemon Squeezy Checkout for the authenticated user.
  * Target userId is locked to req.user.id.
@@ -130,23 +192,15 @@ billingRouter.post('/checkout', requireAuth, async (req: AuthenticatedRequest, r
   const user = req.user!;
   const { planId = 'pro', redirectUrl } = req.body || {};
 
-  const targetPlan = PLANS[planId as 'free' | 'pro'];
-  if (!targetPlan || targetPlan.id === 'free') {
-    return res.status(400).json({
-      success: false,
-      error: 'Free plan does not require a payment checkout.',
-    });
-  }
+  const result = await handleCheckoutRequest(
+    user.id,
+    user.email,
+    user.name,
+    planId,
+    redirectUrl
+  );
 
-  const result = await createLemonSqueezyCheckout({
-    userId: user.id, // Strictly server-derived from authenticated session
-    userEmail: user.email,
-    userName: user.name,
-    variantId: targetPlan.lemonSqueezyVariantId || undefined,
-    redirectUrl,
-  });
-
-  res.json(result);
+  res.status(result.status).json(result.body);
 });
 
 /**

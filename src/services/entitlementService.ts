@@ -117,7 +117,19 @@ export function useEntitlements() {
   const plan = billingState?.plan;
   const subscription = billingState?.subscription;
   const usage = billingState?.usage;
-  const isPro = subscription?.planId === 'pro' && (subscription.status === 'active' || subscription.status === 'trialing');
+  const endsAtTime = subscription?.endsAt ? Date.parse(subscription.endsAt) : null;
+  const isCancelledInPaidPeriod =
+    subscription?.status === 'cancelled' &&
+    subscription?.planId === 'pro' &&
+    endsAtTime !== null &&
+    !isNaN(endsAtTime) &&
+    endsAtTime > Date.now();
+
+  const isPro =
+    subscription?.planId === 'pro' &&
+    (subscription.status === 'active' ||
+      subscription.status === 'trialing' ||
+      isCancelledInPaidPeriod);
 
   return {
     billingState,

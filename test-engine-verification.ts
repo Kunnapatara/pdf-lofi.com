@@ -1212,15 +1212,27 @@ async function runAllTests() {
       );
       const subIdResolves = evt2Result.status === 'processed';
 
-      // 3. Existing customer ID resolves correctly
+      // 3. Existing customer ID resolves correctly for unlinked/new subscription
+      const testUserCust = saasStore.saveUser({
+        id: `usr_test_cust_${Date.now()}`,
+        email: `cust_${Date.now()}@test.com`,
+        name: 'Charlie Customer',
+        createdAt: Date.now(),
+      });
+      const custId3 = `cust_res_${Date.now()}`;
+      saasStore.updateSubscription({
+        ...saasStore.getSubscription(testUserCust.id),
+        lemonSqueezyCustomerId: custId3,
+      });
+
       const evt3Result = await processLemonSqueezyWebhook(
         {
-          meta: { event_name: 'subscription_updated' },
+          meta: { event_name: 'subscription_created' },
           data: {
-            id: `sub_prov_renew_${Date.now()}`,
+            id: `sub_prov_cust_${Date.now()}`,
             attributes: {
               status: 'active',
-              customer_id: userASub.lemonSqueezyCustomerId,
+              customer_id: custId3,
               variant_id: 'var_pro_test',
               updated_at: '2026-09-26T12:10:00.000Z',
             },
@@ -1477,13 +1489,15 @@ async function runAllTests() {
         subStepDiff.status === 'active';
 
       // --- Case 8: Same customer ID, different provider subscription ---
-      // Customer cust_gamma has Sub 2 at 13:00. Now customer creates Sub 3 at 12:45.
-      // Customer ID matches, but provider subscription ID is different -> must not be blocked!
+      // Sub 2 expires at 13:30. Now customer creates Sub 3 at 12:45.
+      // Customer ID matches, provider subscription ID is different, previous sub expired -> replaces cleanly!
       const customerId = `cust_gamma_${Date.now()}`;
       const subId3 = `sub_order_gamma_${Date.now()}`;
-      // Associate customer ID to user via update
+      // Sub 2 expires before Sub 3 arrives
       saasStore.updateSubscription({
         ...subStepDiff,
+        status: 'expired',
+        planId: 'free',
         lemonSqueezyCustomerId: customerId,
       });
 
@@ -1556,6 +1570,769 @@ async function runAllTests() {
     }
   } catch (e: any) {
     assert(false, 'Webhook Event Ordering & Deterministic Edge Cases', e.message);
+  }
+
+  // ==========================================
+  // Test 27: Sprint 12 Single-Subscription Enforcement & Webhook Isolation (Tests 1 - 19)
+  // ==========================================
+  try {
+    const { processLemonSqueezyWebhook } = await import('./src/server/lemonSqueezy/webhooks');
+    const { handleCheckoutRequest } = await import('./src/server/routes/billingRoutes');
+    const { saasStore } = await import('./src/server/storage/saasStore');
+
+    saasStore.snapshot();
+    saasStore.setTestMode(true);
+
+    try {
+      // 1. Test 1 — Active subscription blocks second checkout
+      const testUser1 = saasStore.saveUser({
+        id: `usr_s12_1_${Date.now()}`,
+        email: `s12_1_${Date.now()}@test.com`,
+        name: 'S12 Active User',
+        createdAt: Date.now(),
+      });
+      saasStore.updateSubscription({
+        id: `sub_s12_1`,
+        userId: testUser1.id,
+        planId: 'pro',
+        status: 'active',
+        lemonSqueezySubscriptionId: `ls_sub_active_${Date.now()}`,
+        lemonSqueezyCustomerId: `cust_1_${Date.now()}`,
+        lemonSqueezyOrderId: null,
+        lemonSqueezyVariantId: 'var_pro_test',
+        renewsAt: null,
+        endsAt: null,
+        trialEndsAt: null,
+        isPaused: false,
+        cancelAtPeriodEnd: false,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const t1Res = await handleCheckoutRequest(testUser1.id, testUser1.email, testUser1.name, 'pro');
+      const test1Pass =
+        t1Res.status === 400 &&
+        t1Res.body.error === 'An active Pro subscription already exists. Manage your subscription from billing.';
+
+      // 2. Test 2 — Trialing subscription blocks second checkout
+      const testUser2 = saasStore.saveUser({
+        id: `usr_s12_2_${Date.now()}`,
+        email: `s12_2_${Date.now()}@test.com`,
+        name: 'S12 Trialing User',
+        createdAt: Date.now(),
+      });
+      saasStore.updateSubscription({
+        id: `sub_s12_2`,
+        userId: testUser2.id,
+        planId: 'pro',
+        status: 'trialing',
+        lemonSqueezySubscriptionId: `ls_sub_trialing_${Date.now()}`,
+        lemonSqueezyCustomerId: `cust_2_${Date.now()}`,
+        lemonSqueezyOrderId: null,
+        lemonSqueezyVariantId: 'var_pro_test',
+        renewsAt: null,
+        endsAt: null,
+        trialEndsAt: null,
+        isPaused: false,
+        cancelAtPeriodEnd: false,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const t2Res = await handleCheckoutRequest(testUser2.id, testUser2.email, testUser2.name, 'pro');
+      const test2Pass =
+        t2Res.status === 400 &&
+        t2Res.body.error === 'An active Pro subscription already exists. Manage your subscription from billing.';
+
+      // 3. Test 3 — Free user can create Pro checkout
+      const testUser3 = saasStore.saveUser({
+        id: `usr_s12_3_${Date.now()}`,
+        email: `s12_3_${Date.now()}@test.com`,
+        name: 'S12 Free User',
+        createdAt: Date.now(),
+      });
+      const t3Res = await handleCheckoutRequest(testUser3.id, testUser3.email, testUser3.name, 'pro');
+      // Free user checkout proceeds to Lemon Squeezy client call
+      const test3Pass = t3Res.status === 200 && typeof t3Res.body === 'object';
+
+      // 4. Test 4 — Expired subscription can re-subscribe
+      const testUser4 = saasStore.saveUser({
+        id: `usr_s12_4_${Date.now()}`,
+        email: `s12_4_${Date.now()}@test.com`,
+        name: 'S12 Expired User',
+        createdAt: Date.now(),
+      });
+      saasStore.updateSubscription({
+        id: `sub_s12_4`,
+        userId: testUser4.id,
+        planId: 'free',
+        status: 'expired',
+        lemonSqueezySubscriptionId: `ls_sub_expired_${Date.now()}`,
+        lemonSqueezyCustomerId: `cust_4_${Date.now()}`,
+        lemonSqueezyOrderId: null,
+        lemonSqueezyVariantId: 'var_pro_test',
+        renewsAt: null,
+        endsAt: null,
+        trialEndsAt: null,
+        isPaused: false,
+        cancelAtPeriodEnd: false,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const t4Res = await handleCheckoutRequest(testUser4.id, testUser4.email, testUser4.name, 'pro');
+      const test4Pass = t4Res.status === 200 && typeof t4Res.body === 'object';
+
+      // 5. Test 5 — Same subscription webhook updates normally
+      const testUser5 = saasStore.saveUser({
+        id: `usr_s12_5_${Date.now()}`,
+        email: `s12_5_${Date.now()}@test.com`,
+        name: 'S12 Same Sub User',
+        createdAt: Date.now(),
+      });
+      const subId5 = `ls_sub_same_${Date.now()}`;
+      await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_created', custom_data: { user_id: testUser5.id } },
+          data: {
+            id: subId5,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T10:00:00.000Z',
+              renews_at: '2026-10-26T10:00:00.000Z',
+            },
+          },
+        },
+        `evt_s12_5_create_${Date.now()}`
+      );
+      const t5Update = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_updated' },
+          data: {
+            id: subId5,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T10:30:00.000Z',
+              renews_at: '2026-11-26T10:00:00.000Z',
+            },
+          },
+        },
+        `evt_s12_5_update_${Date.now()}`
+      );
+      const sub5After = saasStore.getSubscription(testUser5.id);
+      const test5Pass =
+        t5Update.status === 'processed' &&
+        sub5After.lemonSqueezySubscriptionId === subId5 &&
+        sub5After.renewsAt === '2026-11-26T10:00:00.000Z';
+
+      // 6. Test 6 — Historical cancellation cannot overwrite current subscription
+      // User has current active sub B. Old sub A cancelled event arrives -> B remains untouched!
+      const testUser6 = saasStore.saveUser({
+        id: `usr_s12_6_${Date.now()}`,
+        email: `s12_6_${Date.now()}@test.com`,
+        name: 'S12 Hist Cancel User',
+        createdAt: Date.now(),
+      });
+      const sub6CurrentB = `ls_sub_6_current_b_${Date.now()}`;
+      const sub6OldA = `ls_sub_6_old_a_${Date.now()}`;
+      const cust6 = `cust_6_${Date.now()}`;
+
+      // Set user to active sub B
+      saasStore.updateSubscription({
+        id: `sub_s12_6`,
+        userId: testUser6.id,
+        planId: 'pro',
+        status: 'active',
+        lemonSqueezySubscriptionId: sub6CurrentB,
+        lemonSqueezyCustomerId: cust6,
+        lemonSqueezyOrderId: null,
+        lemonSqueezyVariantId: 'var_pro_test',
+        renewsAt: '2026-11-01T00:00:00Z',
+        endsAt: null,
+        trialEndsAt: null,
+        isPaused: false,
+        cancelAtPeriodEnd: false,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      const t6CancelRes = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_cancelled' },
+          data: {
+            id: sub6OldA,
+            attributes: {
+              status: 'cancelled',
+              customer_id: cust6,
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T11:00:00.000Z',
+              cancelled: true,
+            },
+          },
+        },
+        `evt_s12_6_cancel_${Date.now()}`
+      );
+      const sub6After = saasStore.getSubscription(testUser6.id);
+      const test6Pass =
+        t6CancelRes.status === 'ignored' &&
+        sub6After.lemonSqueezySubscriptionId === sub6CurrentB &&
+        sub6After.planId === 'pro' &&
+        sub6After.status === 'active';
+
+      // 7. Test 7 — Historical expiration cannot overwrite current subscription
+      const t7ExpireRes = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_expired' },
+          data: {
+            id: sub6OldA,
+            attributes: {
+              status: 'expired',
+              customer_id: cust6,
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T11:30:00.000Z',
+            },
+          },
+        },
+        `evt_s12_7_expire_${Date.now()}`
+      );
+      const sub6AfterExpire = saasStore.getSubscription(testUser6.id);
+      const test7Pass =
+        t7ExpireRes.status === 'ignored' &&
+        sub6AfterExpire.lemonSqueezySubscriptionId === sub6CurrentB &&
+        sub6AfterExpire.planId === 'pro' &&
+        sub6AfterExpire.status === 'active';
+
+      // 8. Test 8 — Historical resume cannot overwrite current subscription
+      const t8ResumeRes = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_resumed' },
+          data: {
+            id: sub6OldA,
+            attributes: {
+              status: 'active',
+              customer_id: cust6,
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T12:00:00.000Z',
+            },
+          },
+        },
+        `evt_s12_8_resume_${Date.now()}`
+      );
+      const sub6AfterResume = saasStore.getSubscription(testUser6.id);
+      const test8Pass =
+        t8ResumeRes.status === 'ignored' &&
+        sub6AfterResume.lemonSqueezySubscriptionId === sub6CurrentB &&
+        sub6AfterResume.planId === 'pro' &&
+        sub6AfterResume.status === 'active';
+
+      // 9. Test 9 — Legitimate new subscription can replace expired subscription
+      const testUser9 = saasStore.saveUser({
+        id: `usr_s12_9_${Date.now()}`,
+        email: `s12_9_${Date.now()}@test.com`,
+        name: 'S12 Re-sub User',
+        createdAt: Date.now(),
+      });
+      const sub9OldA = `ls_sub_9_old_${Date.now()}`;
+      const sub9NewB = `ls_sub_9_new_${Date.now()}`;
+      saasStore.updateSubscription({
+        id: `sub_s12_9`,
+        userId: testUser9.id,
+        planId: 'free',
+        status: 'expired',
+        lemonSqueezySubscriptionId: sub9OldA,
+        lemonSqueezyCustomerId: `cust_9_${Date.now()}`,
+        lemonSqueezyOrderId: null,
+        lemonSqueezyVariantId: 'var_pro_test',
+        renewsAt: null,
+        endsAt: null,
+        trialEndsAt: null,
+        isPaused: false,
+        cancelAtPeriodEnd: false,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const t9CreateRes = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_created', custom_data: { user_id: testUser9.id } },
+          data: {
+            id: sub9NewB,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T13:00:00.000Z',
+            },
+          },
+        },
+        `evt_s12_9_create_${Date.now()}`
+      );
+      const sub9After = saasStore.getSubscription(testUser9.id);
+      const test9Pass =
+        t9CreateRes.status === 'processed' &&
+        sub9After.lemonSqueezySubscriptionId === sub9NewB &&
+        sub9After.planId === 'pro' &&
+        sub9After.status === 'active';
+
+      // 10. Test 10 — Late A event after B creation cannot downgrade B (Mandatory Sequence)
+      // Sequence: A created 10:00 -> A expired 12:00 -> B created 14:00 -> A cancelled 15:00
+      const testUser10 = saasStore.saveUser({
+        id: `usr_s12_10_${Date.now()}`,
+        email: `s12_10_${Date.now()}@test.com`,
+        name: 'S12 Mandatory Sequence User',
+        createdAt: Date.now(),
+      });
+      const sub10A = `ls_sub_10_a_${Date.now()}`;
+      const sub10B = `ls_sub_10_b_${Date.now()}`;
+      const cust10 = `cust_10_${Date.now()}`;
+
+      // A created 10:00
+      await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_created', custom_data: { user_id: testUser10.id } },
+          data: {
+            id: sub10A,
+            attributes: {
+              status: 'active',
+              customer_id: cust10,
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T10:00:00.000Z',
+            },
+          },
+        },
+        `evt_s12_10_a_create_${Date.now()}`
+      );
+      // A expired 12:00
+      await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_expired' },
+          data: {
+            id: sub10A,
+            attributes: {
+              status: 'expired',
+              customer_id: cust10,
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T12:00:00.000Z',
+            },
+          },
+        },
+        `evt_s12_10_a_expire_${Date.now()}`
+      );
+      // B created 14:00
+      await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_created', custom_data: { user_id: testUser10.id } },
+          data: {
+            id: sub10B,
+            attributes: {
+              status: 'active',
+              customer_id: cust10,
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T14:00:00.000Z',
+            },
+          },
+        },
+        `evt_s12_10_b_create_${Date.now()}`
+      );
+      // A cancelled 15:00 (late arrival from previous sub)
+      const lateARes = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_cancelled' },
+          data: {
+            id: sub10A,
+            attributes: {
+              status: 'cancelled',
+              customer_id: cust10,
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T15:00:00.000Z',
+              cancelled: true,
+            },
+          },
+        },
+        `evt_s12_10_a_cancel_${Date.now()}`
+      );
+      const sub10Final = saasStore.getSubscription(testUser10.id);
+      const test10Pass =
+        lateARes.status === 'ignored' &&
+        sub10Final.lemonSqueezySubscriptionId === sub10B &&
+        sub10Final.planId === 'pro' &&
+        sub10Final.status === 'active';
+
+      // 11. Test 11 — Late A resume cannot reactivate A over B
+      const lateAResume = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_resumed' },
+          data: {
+            id: sub10A,
+            attributes: {
+              status: 'active',
+              customer_id: cust10,
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T15:30:00.000Z',
+            },
+          },
+        },
+        `evt_s12_11_resume_${Date.now()}`
+      );
+      const sub10AfterResume = saasStore.getSubscription(testUser10.id);
+      const test11Pass =
+        lateAResume.status === 'ignored' &&
+        sub10AfterResume.lemonSqueezySubscriptionId === sub10B &&
+        sub10AfterResume.planId === 'pro' &&
+        sub10AfterResume.status === 'active';
+
+      // 12. Test 12 — Same customer, different provider subscriptions
+      // Customer cust10 has old A, current B. Event for A under cust10 cannot touch B!
+      const t12Res = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_updated' },
+          data: {
+            id: sub10A,
+            attributes: {
+              status: 'active',
+              customer_id: cust10,
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T16:00:00.000Z',
+            },
+          },
+        },
+        `evt_s12_12_cust_${Date.now()}`
+      );
+      const sub10After12 = saasStore.getSubscription(testUser10.id);
+      const test12Pass =
+        t12Res.status === 'ignored' &&
+        sub10After12.lemonSqueezySubscriptionId === sub10B &&
+        sub10After12.planId === 'pro';
+
+      // 13. Test 13 — Different users remain isolated
+      const testUser13A = saasStore.saveUser({
+        id: `usr_s12_13a_${Date.now()}`,
+        email: `s12_13a_${Date.now()}@test.com`,
+        name: 'User 13A',
+        createdAt: Date.now(),
+      });
+      const testUser13B = saasStore.saveUser({
+        id: `usr_s12_13b_${Date.now()}`,
+        email: `s12_13b_${Date.now()}@test.com`,
+        name: 'User 13B',
+        createdAt: Date.now(),
+      });
+      const sub13A = `ls_sub_13a_${Date.now()}`;
+      const sub13B = `ls_sub_13b_${Date.now()}`;
+
+      await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_created', custom_data: { user_id: testUser13A.id } },
+          data: {
+            id: sub13A,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T10:00:00.000Z',
+            },
+          },
+        },
+        `evt_s12_13a_${Date.now()}`
+      );
+      await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_created', custom_data: { user_id: testUser13B.id } },
+          data: {
+            id: sub13B,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T10:00:00.000Z',
+            },
+          },
+        },
+        `evt_s12_13b_${Date.now()}`
+      );
+      // Expire User 13A sub -> User 13B must remain unaffected
+      await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_expired' },
+          data: {
+            id: sub13A,
+            attributes: {
+              status: 'expired',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T11:00:00.000Z',
+            },
+          },
+        },
+        `evt_s12_13a_exp_${Date.now()}`
+      );
+      const sub13AAfter = saasStore.getSubscription(testUser13A.id);
+      const sub13BAfter = saasStore.getSubscription(testUser13B.id);
+      const test13Pass =
+        sub13AAfter.planId === 'free' &&
+        sub13AAfter.status === 'expired' &&
+        sub13BAfter.planId === 'pro' &&
+        sub13BAfter.status === 'active' &&
+        sub13BAfter.lemonSqueezySubscriptionId === sub13B;
+
+      // 14. Test 14 — Duplicate event remains idempotent
+      const dupEventId = `evt_s12_dup_${Date.now()}`;
+      const firstDupRes = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_updated' },
+          data: {
+            id: sub13B,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T12:00:00.000Z',
+            },
+          },
+        },
+        dupEventId
+      );
+      const secondDupRes = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_updated' },
+          data: {
+            id: sub13B,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T12:00:00.000Z',
+            },
+          },
+        },
+        dupEventId
+      );
+      const test14Pass =
+        firstDupRes.status === 'processed' && secondDupRes.status === 'already_processed';
+
+      // 15. Test 15 — Ordering regression on same provider subscription
+      const sub15 = `ls_sub_15_${Date.now()}`;
+      await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_created', custom_data: { user_id: testUser13A.id } },
+          data: {
+            id: sub15,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T12:00:00.000Z',
+            },
+          },
+        },
+        `evt_s12_15_1200_${Date.now()}`
+      );
+      const t15Newer = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_updated' },
+          data: {
+            id: sub15,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T14:00:00.000Z',
+            },
+          },
+        },
+        `evt_s12_15_1400_${Date.now()}`
+      );
+      const t15Stale = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_updated' },
+          data: {
+            id: sub15,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T13:00:00.000Z', // Stale
+            },
+          },
+        },
+        `evt_s12_15_1300_${Date.now()}`
+      );
+      const test15Pass = t15Newer.status === 'processed' && t15Stale.status === 'ignored';
+
+      // 16. Test 16 — Different provider timestamp isolation
+      // Sub Alpha at 20:00, Sub Beta at 10:00 -> Beta is NOT treated as stale
+      const testUser16 = saasStore.saveUser({
+        id: `usr_s12_16_${Date.now()}`,
+        email: `s12_16_${Date.now()}@test.com`,
+        name: 'User 16 Timestamp Isolation',
+        createdAt: Date.now(),
+      });
+      const sub16Alpha = `ls_sub_16a_${Date.now()}`;
+      const sub16Beta = `ls_sub_16b_${Date.now()}`;
+      saasStore.recordProviderSubscriptionTimestamp(sub16Alpha, Date.parse('2026-09-26T20:00:00.000Z'));
+      const t16BetaRes = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_created', custom_data: { user_id: testUser16.id } },
+          data: {
+            id: sub16Beta,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T10:00:00.000Z',
+            },
+          },
+        },
+        `evt_s12_16b_${Date.now()}`
+      );
+      const test16Pass = t16BetaRes.status === 'processed';
+
+      // 17. Test 17 — Equal timestamp non-advancing
+      const t17Equal = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_updated' },
+          data: {
+            id: sub16Beta,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T10:00:00.000Z', // Exact same
+            },
+          },
+        },
+        `evt_s12_17_eq_${Date.now()}`
+      );
+      const test17Pass = t17Equal.status === 'ignored' && t17Equal.message.includes('identical');
+
+      // 18. Test 18 — Missing/invalid timestamp ignored for established sub
+      const t18Missing = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_updated' },
+          data: {
+            id: sub16Beta,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+            },
+          },
+        },
+        `evt_s12_18_miss_${Date.now()}`
+      );
+      const t18Invalid = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_updated' },
+          data: {
+            id: sub16Beta,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+              updated_at: 'not-valid-date',
+            },
+          },
+        },
+        `evt_s12_18_inv_${Date.now()}`
+      );
+      const test18Pass =
+        t18Missing.status === 'ignored' &&
+        t18Missing.message.includes('missing or invalid') &&
+        t18Invalid.status === 'ignored' &&
+        t18Invalid.message.includes('missing or invalid');
+
+      // 19. Test 19 — Cancellation period entitlement semantics
+      const testUser19 = saasStore.saveUser({
+        id: `usr_s12_19_${Date.now()}`,
+        email: `s12_19_${Date.now()}@test.com`,
+        name: 'User 19 Cancel Period',
+        createdAt: Date.now(),
+      });
+      const sub19 = `ls_sub_19_${Date.now()}`;
+      // 19a. Cancelled with future endsAt -> Pro retained!
+      const futureEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+      await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_created', custom_data: { user_id: testUser19.id } },
+          data: {
+            id: sub19,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T10:00:00.000Z',
+            },
+          },
+        },
+        `evt_s12_19_create_${Date.now()}`
+      );
+      await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_cancelled' },
+          data: {
+            id: sub19,
+            attributes: {
+              status: 'cancelled',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T11:00:00.000Z',
+              cancelled: true,
+              ends_at: futureEndsAt,
+            },
+          },
+        },
+        `evt_s12_19_cancel_fut_${Date.now()}`
+      );
+      const sub19Fut = saasStore.getSubscription(testUser19.id);
+      const ent19Fut = saasStore.getEntitlements(testUser19.id);
+      const test19aPass =
+        sub19Fut.status === 'cancelled' &&
+        sub19Fut.planId === 'pro' &&
+        sub19Fut.cancelAtPeriodEnd === true &&
+        ent19Fut.batchMergeLimit === 50;
+
+      // 19b. Cancelled with past endsAt -> Free entitlement
+      const pastEndsAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_cancelled' },
+          data: {
+            id: sub19,
+            attributes: {
+              status: 'cancelled',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-26T12:00:00.000Z',
+              cancelled: true,
+              ends_at: pastEndsAt,
+            },
+          },
+        },
+        `evt_s12_19_cancel_past_${Date.now()}`
+      );
+      const sub19Past = saasStore.getSubscription(testUser19.id);
+      const ent19Past = saasStore.getEntitlements(testUser19.id);
+      const test19bPass =
+        sub19Past.status === 'cancelled' &&
+        sub19Past.planId === 'free' &&
+        ent19Past.batchMergeLimit === 5;
+
+      const test19Pass = test19aPass && test19bPass;
+
+      const all19Pass =
+        test1Pass &&
+        test2Pass &&
+        test3Pass &&
+        test4Pass &&
+        test5Pass &&
+        test6Pass &&
+        test7Pass &&
+        test8Pass &&
+        test9Pass &&
+        test10Pass &&
+        test11Pass &&
+        test12Pass &&
+        test13Pass &&
+        test14Pass &&
+        test15Pass &&
+        test16Pass &&
+        test17Pass &&
+        test18Pass &&
+        test19Pass;
+
+      assert(
+        all19Pass,
+        'Sprint 12 Single-Subscription Enforcement & Webhook Isolation (Tests 1 - 19)',
+        `All 19 invariants verified: Active/trialing checkout blocked (T1, T2); Free/expired checkout allowed (T3, T4); Same-sub updates (T5); Historical cancel/expire/resume isolated (T6, T7, T8); Re-subscription after expiry (T9); Mandatory sequence late A cannot downgrade B (T10); Late A resume blocked (T11); Same customer isolation (T12); User isolation (T13); Idempotency (T14); Ordering (T15); Provider timestamp isolation (T16); Equal/Missing/Invalid timestamps (T17, T18); Cancellation period Pro retention (T19)`
+      );
+    } finally {
+      saasStore.restoreSnapshot();
+      saasStore.setTestMode(false);
+    }
+  } catch (e: any) {
+    assert(false, 'Sprint 12 Single-Subscription Enforcement & Webhook Isolation (Tests 1 - 19)', e.message);
   }
 
   console.log('\n--- FINAL TEST SUMMARY ---');

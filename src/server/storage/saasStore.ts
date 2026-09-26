@@ -294,8 +294,16 @@ class SaaSStore {
     const sub = this.getSubscription(userId);
     const plan = PLANS[sub.planId] || PLANS.free;
 
-    // Check if subscription is in an active or trialing state
-    const isActive = sub.status === 'active' || sub.status === 'trialing';
+    const endsAtTime = sub.endsAt ? Date.parse(sub.endsAt) : null;
+    const isCancelledInPaidPeriod =
+      sub.status === 'cancelled' &&
+      sub.planId === 'pro' &&
+      endsAtTime !== null &&
+      !isNaN(endsAtTime) &&
+      endsAtTime > Date.now();
+
+    // Check if subscription is in an active or trialing state (or cancelled within paid period)
+    const isActive = sub.status === 'active' || sub.status === 'trialing' || isCancelledInPaidPeriod;
     if (!isActive && sub.planId !== 'free') {
       // Degrade to free entitlements if pro is past due/expired
       return PLANS.free.entitlements;

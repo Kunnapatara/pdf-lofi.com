@@ -175,7 +175,57 @@ export async function processLemonSqueezyWebhook(
 
         const currentSub = saasStore.getSubscription(targetUserId);
 
-        // 3. Provider Timestamp & Out-of-Order Stale Event Guard
+        // 3. Single-Active-Subscription Invariant & State Ownership Isolation
+        // A webhook for provider subscription A must NEVER mutate or overwrite the current
+        // subscription state belonging to provider subscription B.
+        const currentEndsAtTime = currentSub.endsAt ? Date.parse(currentSub.endsAt) : null;
+        const isCurrentCancelledInPaidPeriod =
+          currentSub.status === 'cancelled' &&
+          currentSub.planId === 'pro' &&
+          currentEndsAtTime !== null &&
+          !isNaN(currentEndsAtTime) &&
+          currentEndsAtTime > Date.now();
+
+        const isCurrentSubActive =
+          currentSub.planId === 'pro' &&
+          (currentSub.status === 'active' ||
+            currentSub.status === 'trialing' ||
+            isCurrentCancelledInPaidPeriod);
+
+        const isCurrentProviderSub =
+          currentSub.lemonSqueezySubscriptionId !== null &&
+          currentSub.lemonSqueezySubscriptionId === providerSubId;
+
+        // If user already has a bound provider subscription and incoming event is for a DIFFERENT provider sub ID:
+        if (currentSub.lemonSqueezySubscriptionId !== null && !isCurrentProviderSub) {
+          // Rule 1: If current subscription is active/trialing (or cancelled within paid period),
+          // NO other provider subscription can mutate, overwrite, downgrade, or resurrect state.
+          if (isCurrentSubActive) {
+            console.warn(
+              `[Webhook Isolation] Event ${eventId} (${eventName}) for provider subscription ${providerSubId} ignored: user ${targetUserId} already has active subscription ${currentSub.lemonSqueezySubscriptionId}. Cross-subscription mutation prohibited.`
+            );
+            saasStore.recordWebhookProcessed(eventId, eventName, 'ignored');
+            return {
+              status: 'ignored',
+              message: `Event ${eventName} ignored: user already has an active subscription (${currentSub.lemonSqueezySubscriptionId}); cross-subscription state overwrite prevented.`,
+            };
+          }
+
+          // Rule 2: If current subscription is NOT active (e.g. expired or cancelled after period end):
+          // ONLY a legitimate 'subscription_created' event can replace it with a new subscription.
+          if (eventName !== 'subscription_created') {
+            console.warn(
+              `[Webhook Isolation] Event ${eventId} (${eventName}) for historical provider subscription ${providerSubId} ignored: does not match current subscription ${currentSub.lemonSqueezySubscriptionId} for user ${targetUserId}.`
+            );
+            saasStore.recordWebhookProcessed(eventId, eventName, 'ignored');
+            return {
+              status: 'ignored',
+              message: `Historical event ${eventName} ignored: provider subscription ${providerSubId} does not match current subscription.`,
+            };
+          }
+        }
+
+        // 4. Provider Timestamp & Out-of-Order Stale Event Guard
         // Ordering is strictly scoped to the same provider subscription ID (providerSubId).
         // Timestamps from different provider subscriptions must never collide or cross-invalidate.
         const lastStoredTimestamp = saasStore.getProviderSubscriptionTimestamp(providerSubId);
@@ -259,9 +309,19 @@ export async function processLemonSqueezyWebhook(
           isProVariant = true;
         }
 
+        const endsAtStr = attrs.ends_at || null;
+        const endsAtTime = endsAtStr ? Date.parse(endsAtStr) : null;
+        const isCancelledInPaidPeriod =
+          mappedStatus === 'cancelled' &&
+          endsAtTime !== null &&
+          !isNaN(endsAtTime) &&
+          endsAtTime > Date.now();
+
         const isProPlan =
           isProVariant &&
-          (mappedStatus === 'active' || mappedStatus === 'trialing');
+          (mappedStatus === 'active' ||
+            mappedStatus === 'trialing' ||
+            isCancelledInPaidPeriod);
 
         const updatedSub = {
           ...currentSub,
@@ -272,7 +332,7 @@ export async function processLemonSqueezyWebhook(
           lemonSqueezyOrderId: orderId || currentSub.lemonSqueezyOrderId,
           lemonSqueezyVariantId: variantId || currentSub.lemonSqueezyVariantId,
           renewsAt: attrs.renews_at || null,
-          endsAt: attrs.ends_at || null,
+          endsAt: endsAtStr,
           trialEndsAt: attrs.trial_ends_at || null,
           isPaused: Boolean(attrs.is_paused),
           cancelAtPeriodEnd: Boolean(attrs.cancelled),
