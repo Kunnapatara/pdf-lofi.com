@@ -176,30 +176,76 @@ export async function processLemonSqueezyWebhook(
         const currentSub = saasStore.getSubscription(targetUserId);
 
         // 3. Provider Timestamp & Out-of-Order Stale Event Guard
+        // Ordering is strictly scoped to the same provider subscription ID (providerSubId).
+        // Timestamps from different provider subscriptions must never collide or cross-invalidate.
+        const lastStoredTimestamp = saasStore.getProviderSubscriptionTimestamp(providerSubId);
+
         const providerTimestampStr =
           attrs.updated_at ||
           attrs.created_at ||
           (typeof payload?.meta?.created_at === 'string' ? payload.meta.created_at : null);
-        const providerTimestamp = providerTimestampStr ? Date.parse(providerTimestampStr) : null;
-        const hasValidProviderTimestamp =
-          typeof providerTimestamp === 'number' && !isNaN(providerTimestamp);
 
-        // If the current subscription already has a provider timestamp and the incoming event
-        // has an older provider timestamp, ignore the stale event without mutating state.
+        let providerTimestamp: number | null = null;
+        if (providerTimestampStr && typeof providerTimestampStr === 'string') {
+          const parsed = Date.parse(providerTimestampStr);
+          if (!isNaN(parsed)) {
+            providerTimestamp = parsed;
+          }
+        }
+        const hasValidProviderTimestamp = providerTimestamp !== null;
+
+        // Policy: Missing or Invalid Provider Timestamp
+        // Never fabricate provider timestamps using Date.now() or server receipt time.
+        // If a provider subscription already has a verified provider timestamp on record,
+        // an incoming event lacking a valid provider timestamp cannot be proven to be newer.
+        // It is safely ignored to protect against unverified out-of-order state corruption.
+        if (lastStoredTimestamp !== null && !hasValidProviderTimestamp) {
+          console.warn(
+            `[Webhook Ordering] Event ${eventId} (${eventName}) for provider subscription ${providerSubId} lacks a valid provider timestamp and cannot be ordered against verified stored timestamp (${new Date(
+              lastStoredTimestamp
+            ).toISOString()}). Ignoring to prevent out-of-order state corruption.`
+          );
+          saasStore.recordWebhookProcessed(eventId, eventName, 'ignored');
+          return {
+            status: 'ignored',
+            message: `Event ${eventName} ignored: missing or invalid provider timestamp cannot be ordered against verified subscription state.`,
+          };
+        }
+
+        // Policy: Stale Event (Incoming timestamp is older than stored timestamp for this provider subscription)
         if (
-          currentSub.lemonSqueezyUpdatedAt &&
-          hasValidProviderTimestamp &&
-          providerTimestamp < currentSub.lemonSqueezyUpdatedAt
+          lastStoredTimestamp !== null &&
+          providerTimestamp !== null &&
+          providerTimestamp < lastStoredTimestamp
         ) {
           console.warn(
-            `[Webhook Stale] Event ${eventId} (${eventName}) provider timestamp (${providerTimestampStr}) is older than stored subscription state (${new Date(
-              currentSub.lemonSqueezyUpdatedAt
+            `[Webhook Stale] Event ${eventId} (${eventName}) for provider subscription ${providerSubId} has provider timestamp (${providerTimestampStr}) older than stored state (${new Date(
+              lastStoredTimestamp
             ).toISOString()}). Ignoring stale event.`
           );
           saasStore.recordWebhookProcessed(eventId, eventName, 'ignored');
           return {
             status: 'ignored',
             message: `Event ${eventName} ignored as stale: provider timestamp (${providerTimestampStr}) is older than stored subscription state.`,
+          };
+        }
+
+        // Policy: Equal Provider Timestamps
+        // If an incoming event has the exact same provider timestamp as the already stored state,
+        // the event does not advance the subscription timeline. We do not assume incoming is newer.
+        // The existing stored state is preserved and the event is ignored as non-advancing.
+        if (
+          lastStoredTimestamp !== null &&
+          providerTimestamp !== null &&
+          providerTimestamp === lastStoredTimestamp
+        ) {
+          console.warn(
+            `[Webhook Ordering] Event ${eventId} (${eventName}) for provider subscription ${providerSubId} has identical provider timestamp (${providerTimestampStr}) to currently stored state. Deterministic policy: preserve existing state without assuming incoming event is newer.`
+          );
+          saasStore.recordWebhookProcessed(eventId, eventName, 'ignored');
+          return {
+            status: 'ignored',
+            message: `Event ${eventName} ignored: provider timestamp (${providerTimestampStr}) is identical to existing stored state; non-advancing event.`,
           };
         }
 
@@ -232,10 +278,16 @@ export async function processLemonSqueezyWebhook(
           cancelAtPeriodEnd: Boolean(attrs.cancelled),
           lemonSqueezyUpdatedAt: hasValidProviderTimestamp
             ? providerTimestamp
-            : (currentSub.lemonSqueezyUpdatedAt || Date.now()),
+            : (currentSub.lemonSqueezySubscriptionId === providerSubId
+                ? currentSub.lemonSqueezyUpdatedAt
+                : null),
         };
 
         saasStore.updateSubscription(updatedSub);
+
+        if (hasValidProviderTimestamp && providerTimestamp !== null) {
+          saasStore.recordProviderSubscriptionTimestamp(providerSubId, providerTimestamp);
+        }
 
         // Adjust usage quotas if upgraded to pro
         if (updatedSub.planId === 'pro') {

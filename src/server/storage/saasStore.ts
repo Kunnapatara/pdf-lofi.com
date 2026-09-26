@@ -89,11 +89,14 @@ interface ServerStoreSchema {
   subscriptions: Record<string, UserSubscription>;
   usage: Record<string, UserUsage>;
   webhookEvents: Record<string, WebhookRecord>;
+  providerSubscriptionTimestamps?: Record<string, number>;
 }
 
 class SaaSStore {
   private dataFilePath: string;
   private state: ServerStoreSchema;
+  private isTestMode: boolean = false;
+  private snapshotState: ServerStoreSchema | null = null;
 
   constructor() {
     const dataDir = path.join(process.cwd(), 'data');
@@ -106,6 +109,23 @@ class SaaSStore {
     }
     this.dataFilePath = path.join(dataDir, 'saas-store.json');
     this.state = this.loadState();
+  }
+
+  setTestMode(enabled: boolean): void {
+    this.isTestMode = enabled;
+  }
+
+  snapshot(): void {
+    this.snapshotState = JSON.parse(JSON.stringify(this.state));
+  }
+
+  restoreSnapshot(): void {
+    if (this.snapshotState) {
+      this.state = JSON.parse(JSON.stringify(this.snapshotState));
+      if (!this.isTestMode) {
+        this.persist();
+      }
+    }
   }
 
   private loadState(): ServerStoreSchema {
@@ -162,6 +182,7 @@ class SaaSStore {
           subscriptions: parsed.subscriptions || { [defaultUser.id]: defaultSubscription },
           usage: parsed.usage || { [defaultUser.id]: defaultUsage },
           webhookEvents: parsed.webhookEvents || {},
+          providerSubscriptionTimestamps: parsed.providerSubscriptionTimestamps || {},
         };
       } catch (err) {
         console.warn('Failed to parse saas-store.json, resetting to defaults', err);
@@ -173,6 +194,7 @@ class SaaSStore {
       subscriptions: { [defaultUser.id]: defaultSubscription },
       usage: { [defaultUser.id]: defaultUsage },
       webhookEvents: {},
+      providerSubscriptionTimestamps: {},
     };
 
     this.persist(initialState);
@@ -180,6 +202,7 @@ class SaaSStore {
   }
 
   private persist(data: ServerStoreSchema = this.state) {
+    if (this.isTestMode) return;
     try {
       fs.writeFileSync(this.dataFilePath, JSON.stringify(data, null, 2), 'utf-8');
     } catch (err) {
@@ -351,6 +374,32 @@ class SaaSStore {
       processedAt: Date.now(),
       status,
     };
+    this.persist();
+  }
+
+  // --- Provider Subscription Ordering State ---
+  getProviderSubscriptionTimestamp(providerSubId: string): number | null {
+    if (!providerSubId) return null;
+    if (!this.state.providerSubscriptionTimestamps) {
+      this.state.providerSubscriptionTimestamps = {};
+    }
+    const stored = this.state.providerSubscriptionTimestamps[providerSubId];
+    if (typeof stored === 'number' && !isNaN(stored)) {
+      return stored;
+    }
+    const sub = this.findSubscriptionByLemonSqueezyId(providerSubId);
+    if (sub && typeof sub.lemonSqueezyUpdatedAt === 'number' && !isNaN(sub.lemonSqueezyUpdatedAt)) {
+      return sub.lemonSqueezyUpdatedAt;
+    }
+    return null;
+  }
+
+  recordProviderSubscriptionTimestamp(providerSubId: string, timestamp: number): void {
+    if (!providerSubId || typeof timestamp !== 'number' || isNaN(timestamp)) return;
+    if (!this.state.providerSubscriptionTimestamps) {
+      this.state.providerSubscriptionTimestamps = {};
+    }
+    this.state.providerSubscriptionTimestamps[providerSubId] = timestamp;
     this.persist();
   }
 }
