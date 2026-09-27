@@ -122,15 +122,28 @@ billingRouter.post('/usage/record', requireAuth, (req: AuthenticatedRequest, res
 });
 
 /**
- * Process a checkout request with authoritative server-side single-subscription check.
- * Blocks duplicate active/trialing/cancelled-in-period Pro subscriptions.
+ * In-flight checkout mutex to prevent duplicate concurrent checkouts for the same user.
+ * Scoped strictly per internal userId.
+ */
+const inFlightCheckouts = new Set<string>();
+
+export function isCheckoutInFlight(userId: string): boolean {
+  return inFlightCheckouts.has(userId);
+}
+
+/**
+ * Process a checkout request with authoritative server-side single-subscription check
+ * and per-user checkout concurrency locking.
+ * Blocks duplicate active/trialing/cancelled-in-period Pro subscriptions,
+ * and rejects concurrent in-flight checkout creations for the same user.
  */
 export async function handleCheckoutRequest(
   userId: string,
   userEmail: string,
   userName: string,
   planId: string = 'pro',
-  redirectUrl?: string
+  redirectUrl?: string,
+  checkoutCreator: typeof createLemonSqueezyCheckout = createLemonSqueezyCheckout
 ): Promise<{ status: number; body: any }> {
   const targetPlan = PLANS[planId as 'free' | 'pro'];
   if (!targetPlan || targetPlan.id === 'free') {
@@ -169,18 +182,34 @@ export async function handleCheckoutRequest(
     };
   }
 
-  const result = await createLemonSqueezyCheckout({
-    userId, // Strictly server-derived from authenticated session
-    userEmail,
-    userName,
-    variantId: targetPlan.lemonSqueezyVariantId || undefined,
-    redirectUrl,
-  });
+  // Concurrency Guard: Enforce at most one in-flight checkout creation per user
+  if (inFlightCheckouts.has(userId)) {
+    return {
+      status: 409,
+      body: {
+        success: false,
+        error: 'A checkout creation is already in progress for this account. Please wait.',
+      },
+    };
+  }
 
-  return {
-    status: 200,
-    body: result,
-  };
+  inFlightCheckouts.add(userId);
+  try {
+    const result = await checkoutCreator({
+      userId, // Strictly server-derived from authenticated session
+      userEmail,
+      userName,
+      variantId: targetPlan.lemonSqueezyVariantId || undefined,
+      redirectUrl,
+    });
+
+    return {
+      status: 200,
+      body: result,
+    };
+  } finally {
+    inFlightCheckouts.delete(userId);
+  }
 }
 
 /**

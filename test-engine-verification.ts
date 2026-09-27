@@ -1503,7 +1503,7 @@ async function runAllTests() {
 
       const eventSameCustDiffSub = await processLemonSqueezyWebhook(
         {
-          meta: { event_name: 'subscription_created' },
+          meta: { event_name: 'subscription_created', custom_data: { user_id: testUserC.id } },
           data: {
             id: subId3,
             attributes: {
@@ -2333,6 +2333,470 @@ async function runAllTests() {
     }
   } catch (e: any) {
     assert(false, 'Sprint 12 Single-Subscription Enforcement & Webhook Isolation (Tests 1 - 19)', e.message);
+  }
+
+  // ==========================================
+  // Test 28: Sprint 13 Billing Boundary Final Hardening (Tests 20 - 30)
+  // ==========================================
+  try {
+    const { processLemonSqueezyWebhook } = await import('./src/server/lemonSqueezy/webhooks');
+    const { handleCheckoutRequest, isCheckoutInFlight } = await import('./src/server/routes/billingRoutes');
+    const { saasStore } = await import('./src/server/storage/saasStore');
+
+    saasStore.snapshot();
+    saasStore.setTestMode(true);
+
+    try {
+      // -------------------------------------------------------------
+      // Objective 1: Concurrent Checkout Hardening
+      // -------------------------------------------------------------
+
+      // Test 20 — Two simultaneous checkout requests for the same Free user:
+      // Only one request may call createLemonSqueezyCheckout().
+      // The second request must return 409 and not independently create a checkout.
+      const userT20 = saasStore.saveUser({
+        id: `usr_s13_t20_${Date.now()}`,
+        email: `t20_${Date.now()}@test.com`,
+        name: 'T20 Concurrent User',
+        createdAt: Date.now(),
+      });
+
+      let providerCallCountT20 = 0;
+      const slowMockCreator = async () => {
+        providerCallCountT20++;
+        await new Promise((r) => setTimeout(r, 50));
+        return { success: true, url: 'https://lemonsqueezy.com/checkout/mock_t20' };
+      };
+
+      const [res20A, res20B] = await Promise.all([
+        handleCheckoutRequest(userT20.id, userT20.email, userT20.name, 'pro', undefined, slowMockCreator as any),
+        handleCheckoutRequest(userT20.id, userT20.email, userT20.name, 'pro', undefined, slowMockCreator as any),
+      ]);
+
+      const t20Pass =
+        providerCallCountT20 === 1 &&
+        ((res20A.status === 200 && res20B.status === 409 && res20B.body.error?.includes('already in progress')) ||
+          (res20B.status === 200 && res20A.status === 409 && res20A.body.error?.includes('already in progress')));
+
+      // Test 21 — Concurrent checkout requests for User A must not block checkout for User B
+      const userT21A = saasStore.saveUser({
+        id: `usr_s13_t21a_${Date.now()}`,
+        email: `t21a_${Date.now()}@test.com`,
+        name: 'T21 User A',
+        createdAt: Date.now(),
+      });
+      const userT21B = saasStore.saveUser({
+        id: `usr_s13_t21b_${Date.now()}`,
+        email: `t21b_${Date.now()}@test.com`,
+        name: 'T21 User B',
+        createdAt: Date.now(),
+      });
+
+      let providerCallsT21 = 0;
+      const mockCreator21 = async () => {
+        providerCallsT21++;
+        await new Promise((r) => setTimeout(r, 40));
+        return { success: true, url: 'https://lemonsqueezy.com/checkout/mock_21' };
+      };
+
+      const [res21A, res21B] = await Promise.all([
+        handleCheckoutRequest(userT21A.id, userT21A.email, userT21A.name, 'pro', undefined, mockCreator21 as any),
+        handleCheckoutRequest(userT21B.id, userT21B.email, userT21B.name, 'pro', undefined, mockCreator21 as any),
+      ]);
+
+      const t21Pass =
+        providerCallsT21 === 2 &&
+        res21A.status === 200 &&
+        res21B.status === 200 &&
+        !isCheckoutInFlight(userT21A.id) &&
+        !isCheckoutInFlight(userT21B.id);
+
+      // Test 22 — Checkout lock releases after successful checkout
+      const userT22 = saasStore.saveUser({
+        id: `usr_s13_t22_${Date.now()}`,
+        email: `t22_${Date.now()}@test.com`,
+        name: 'T22 User',
+        createdAt: Date.now(),
+      });
+      const res22First = await handleCheckoutRequest(userT22.id, userT22.email, userT22.name, 'pro');
+      const lockReleasedT22 = !isCheckoutInFlight(userT22.id);
+      // Subsequent request evaluates normally without being stuck in 409
+      const res22Second = await handleCheckoutRequest(userT22.id, userT22.email, userT22.name, 'pro');
+      const t22Pass = res22First.status === 200 && lockReleasedT22 && res22Second.status === 200;
+
+      // Test 23 — Checkout lock releases after checkout failure / exception
+      const userT23 = saasStore.saveUser({
+        id: `usr_s13_t23_${Date.now()}`,
+        email: `t23_${Date.now()}@test.com`,
+        name: 'T23 User',
+        createdAt: Date.now(),
+      });
+      const failingCreator = async () => {
+        throw new Error('Lemon Squeezy API network error');
+      };
+      let caughtT23 = false;
+      try {
+        await handleCheckoutRequest(userT23.id, userT23.email, userT23.name, 'pro', undefined, failingCreator as any);
+      } catch (err) {
+        caughtT23 = true;
+      }
+      const lockReleasedT23 = !isCheckoutInFlight(userT23.id);
+      // Subsequent request is not permanently blocked
+      const res23Subsequent = await handleCheckoutRequest(userT23.id, userT23.email, userT23.name, 'pro');
+      const t23Pass = caughtT23 && lockReleasedT23 && res23Subsequent.status === 200;
+
+      // -------------------------------------------------------------
+      // Objective 2: Strict New-Subscription Replacement Ownership
+      // -------------------------------------------------------------
+
+      // Test 24 — Expired A -> new B with verified custom_data.user_id -> processed, current = B, plan = pro
+      const userT24 = saasStore.saveUser({
+        id: `usr_s13_t24_${Date.now()}`,
+        email: `t24_${Date.now()}@test.com`,
+        name: 'T24 User',
+        createdAt: Date.now(),
+      });
+      const sub24A = `ls_sub_24a_${Date.now()}`;
+      const sub24B = `ls_sub_24b_${Date.now()}`;
+      saasStore.updateSubscription({
+        id: `sub_t24`,
+        userId: userT24.id,
+        planId: 'free',
+        status: 'expired',
+        lemonSqueezySubscriptionId: sub24A,
+        lemonSqueezyCustomerId: `cust_24_${Date.now()}`,
+        lemonSqueezyOrderId: null,
+        lemonSqueezyVariantId: 'var_pro_test',
+        renewsAt: null,
+        endsAt: null,
+        trialEndsAt: null,
+        isPaused: false,
+        cancelAtPeriodEnd: false,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const res24 = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_created', custom_data: { user_id: userT24.id } },
+          data: {
+            id: sub24B,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-27T10:00:00.000Z',
+            },
+          },
+        },
+        `evt_s13_t24_${Date.now()}`
+      );
+      const sub24After = saasStore.getSubscription(userT24.id);
+      const t24Pass =
+        res24.status === 'processed' &&
+        sub24After.lemonSqueezySubscriptionId === sub24B &&
+        sub24After.planId === 'pro' &&
+        sub24After.status === 'active';
+
+      // Test 25 — Expired A -> new B WITHOUT custom_data.user_id, but matching customer ID -> NOT processed as replacement, A remains current, no Pro grant
+      const userT25 = saasStore.saveUser({
+        id: `usr_s13_t25_${Date.now()}`,
+        email: `t25_${Date.now()}@test.com`,
+        name: 'T25 User',
+        createdAt: Date.now(),
+      });
+      const cust25 = `cust_25_${Date.now()}`;
+      const sub25A = `ls_sub_25a_${Date.now()}`;
+      const sub25B = `ls_sub_25b_${Date.now()}`;
+      saasStore.updateSubscription({
+        id: `sub_t25`,
+        userId: userT25.id,
+        planId: 'free',
+        status: 'expired',
+        lemonSqueezySubscriptionId: sub25A,
+        lemonSqueezyCustomerId: cust25,
+        lemonSqueezyOrderId: null,
+        lemonSqueezyVariantId: 'var_pro_test',
+        renewsAt: null,
+        endsAt: null,
+        trialEndsAt: null,
+        isPaused: false,
+        cancelAtPeriodEnd: false,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const res25 = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_created' }, // Missing custom_data.user_id
+          data: {
+            id: sub25B,
+            attributes: {
+              status: 'active',
+              customer_id: cust25,
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-27T10:00:00.000Z',
+            },
+          },
+        },
+        `evt_s13_t25_${Date.now()}`
+      );
+      const sub25After = saasStore.getSubscription(userT25.id);
+      const ent25After = saasStore.getEntitlements(userT25.id);
+      const t25Pass =
+        res25.status === 'ignored' &&
+        sub25After.lemonSqueezySubscriptionId === sub25A &&
+        sub25After.status === 'expired' &&
+        sub25After.planId === 'free' &&
+        ent25After.batchMergeLimit === 5; // No Pro grant!
+
+      // Test 26 — Expired A -> new B with invalid custom_data.user_id + matching customer ID -> NOT processed as replacement
+      const sub26B = `ls_sub_26b_${Date.now()}`;
+      const res26 = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_created', custom_data: { user_id: 'nonexistent_usr_random_999' } },
+          data: {
+            id: sub26B,
+            attributes: {
+              status: 'active',
+              customer_id: cust25,
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-27T10:00:00.000Z',
+            },
+          },
+        },
+        `evt_s13_t26_${Date.now()}`
+      );
+      const sub26After = saasStore.getSubscription(userT25.id);
+      const t26Pass =
+        (res26.status === 'quarantined' || res26.status === 'ignored') &&
+        sub26After.lemonSqueezySubscriptionId === sub25A &&
+        sub26After.planId === 'free';
+
+      // Test 27 — Cancelled A with future endsAt -> new B -> ignored, A remains current, A retains Pro entitlement
+      const userT27 = saasStore.saveUser({
+        id: `usr_s13_t27_${Date.now()}`,
+        email: `t27_${Date.now()}@test.com`,
+        name: 'T27 User',
+        createdAt: Date.now(),
+      });
+      const sub27A = `ls_sub_27a_${Date.now()}`;
+      const sub27B = `ls_sub_27b_${Date.now()}`;
+      const futureEndsAt27 = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString();
+      saasStore.updateSubscription({
+        id: `sub_t27`,
+        userId: userT27.id,
+        planId: 'pro',
+        status: 'cancelled',
+        lemonSqueezySubscriptionId: sub27A,
+        lemonSqueezyCustomerId: `cust_27_${Date.now()}`,
+        lemonSqueezyOrderId: null,
+        lemonSqueezyVariantId: 'var_pro_test',
+        renewsAt: null,
+        endsAt: futureEndsAt27,
+        trialEndsAt: null,
+        isPaused: false,
+        cancelAtPeriodEnd: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const res27 = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_created', custom_data: { user_id: userT27.id } },
+          data: {
+            id: sub27B,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-27T10:00:00.000Z',
+            },
+          },
+        },
+        `evt_s13_t27_${Date.now()}`
+      );
+      const sub27After = saasStore.getSubscription(userT27.id);
+      const ent27After = saasStore.getEntitlements(userT27.id);
+      const t27Pass =
+        res27.status === 'ignored' &&
+        sub27After.lemonSqueezySubscriptionId === sub27A &&
+        sub27After.status === 'cancelled' &&
+        sub27After.planId === 'pro' &&
+        ent27After.batchMergeLimit === 50; // Pro retained!
+
+      // Test 28 — Cancelled A with past endsAt -> new B with verified custom_data.user_id -> processed, B becomes current Pro
+      const userT28 = saasStore.saveUser({
+        id: `usr_s13_t28_${Date.now()}`,
+        email: `t28_${Date.now()}@test.com`,
+        name: 'T28 User',
+        createdAt: Date.now(),
+      });
+      const sub28A = `ls_sub_28a_${Date.now()}`;
+      const sub28B = `ls_sub_28b_${Date.now()}`;
+      const pastEndsAt28 = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+      saasStore.updateSubscription({
+        id: `sub_t28`,
+        userId: userT28.id,
+        planId: 'free',
+        status: 'cancelled',
+        lemonSqueezySubscriptionId: sub28A,
+        lemonSqueezyCustomerId: `cust_28_${Date.now()}`,
+        lemonSqueezyOrderId: null,
+        lemonSqueezyVariantId: 'var_pro_test',
+        renewsAt: null,
+        endsAt: pastEndsAt28,
+        trialEndsAt: null,
+        isPaused: false,
+        cancelAtPeriodEnd: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const res28 = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_created', custom_data: { user_id: userT28.id } },
+          data: {
+            id: sub28B,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-27T10:00:00.000Z',
+            },
+          },
+        },
+        `evt_s13_t28_${Date.now()}`
+      );
+      const sub28After = saasStore.getSubscription(userT28.id);
+      const t28Pass =
+        res28.status === 'processed' &&
+        sub28After.lemonSqueezySubscriptionId === sub28B &&
+        sub28After.planId === 'pro' &&
+        sub28After.status === 'active';
+
+      // Test 29 — Active A -> new B with verified custom_data.user_id -> ignored, A unchanged
+      const userT29 = saasStore.saveUser({
+        id: `usr_s13_t29_${Date.now()}`,
+        email: `t29_${Date.now()}@test.com`,
+        name: 'T29 User',
+        createdAt: Date.now(),
+      });
+      const sub29A = `ls_sub_29a_${Date.now()}`;
+      const sub29B = `ls_sub_29b_${Date.now()}`;
+      saasStore.updateSubscription({
+        id: `sub_t29`,
+        userId: userT29.id,
+        planId: 'pro',
+        status: 'active',
+        lemonSqueezySubscriptionId: sub29A,
+        lemonSqueezyCustomerId: `cust_29_${Date.now()}`,
+        lemonSqueezyOrderId: null,
+        lemonSqueezyVariantId: 'var_pro_test',
+        renewsAt: '2026-11-01T00:00:00Z',
+        endsAt: null,
+        trialEndsAt: null,
+        isPaused: false,
+        cancelAtPeriodEnd: false,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const res29 = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_created', custom_data: { user_id: userT29.id } },
+          data: {
+            id: sub29B,
+            attributes: {
+              status: 'active',
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-27T10:00:00.000Z',
+            },
+          },
+        },
+        `evt_s13_t29_${Date.now()}`
+      );
+      const sub29After = saasStore.getSubscription(userT29.id);
+      const t29Pass =
+        res29.status === 'ignored' &&
+        sub29After.lemonSqueezySubscriptionId === sub29A &&
+        sub29After.planId === 'pro' &&
+        sub29After.status === 'active';
+
+      // Test 30 — User A current subscription must not be mutated by a new subscription event explicitly owned by User B
+      const userT30A = saasStore.saveUser({
+        id: `usr_s13_t30a_${Date.now()}`,
+        email: `t30a_${Date.now()}@test.com`,
+        name: 'T30 User A',
+        createdAt: Date.now(),
+      });
+      const userT30B = saasStore.saveUser({
+        id: `usr_s13_t30b_${Date.now()}`,
+        email: `t30b_${Date.now()}@test.com`,
+        name: 'T30 User B',
+        createdAt: Date.now(),
+      });
+      const sub30A = `ls_sub_30a_${Date.now()}`;
+      const sub30B = `ls_sub_30b_${Date.now()}`;
+      saasStore.updateSubscription({
+        id: `sub_t30a`,
+        userId: userT30A.id,
+        planId: 'free',
+        status: 'expired',
+        lemonSqueezySubscriptionId: sub30A,
+        lemonSqueezyCustomerId: `cust_30_shared`,
+        lemonSqueezyOrderId: null,
+        lemonSqueezyVariantId: 'var_pro_test',
+        renewsAt: null,
+        endsAt: null,
+        trialEndsAt: null,
+        isPaused: false,
+        cancelAtPeriodEnd: false,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const res30 = await processLemonSqueezyWebhook(
+        {
+          meta: { event_name: 'subscription_created', custom_data: { user_id: userT30B.id } },
+          data: {
+            id: sub30B,
+            attributes: {
+              status: 'active',
+              customer_id: `cust_30_shared`,
+              variant_id: 'var_pro_test',
+              updated_at: '2026-09-27T10:00:00.000Z',
+            },
+          },
+        },
+        `evt_s13_t30_${Date.now()}`
+      );
+      const sub30AAfter = saasStore.getSubscription(userT30A.id);
+      const sub30BAfter = saasStore.getSubscription(userT30B.id);
+      const t30Pass =
+        res30.status === 'processed' &&
+        sub30AAfter.lemonSqueezySubscriptionId === sub30A && // User A unchanged!
+        sub30AAfter.status === 'expired' &&
+        sub30AAfter.planId === 'free' &&
+        sub30BAfter.lemonSqueezySubscriptionId === sub30B && // User B receives Sub B
+        sub30BAfter.planId === 'pro' &&
+        sub30BAfter.status === 'active';
+
+      const allSprint13Pass =
+        t20Pass &&
+        t21Pass &&
+        t22Pass &&
+        t23Pass &&
+        t24Pass &&
+        t25Pass &&
+        t26Pass &&
+        t27Pass &&
+        t28Pass &&
+        t29Pass &&
+        t30Pass;
+
+      assert(
+        allSprint13Pass,
+        'Sprint 13 Billing Boundary Final Hardening (Tests 20 - 30)',
+        `All 11 Sprint 13 hardening tests verified: Concurrent checkout same user blocked (T20); Concurrent checkout diff users parallel (T21); Lock released on success (T22); Lock released on exception (T23); Verified replacement allowed (T24); Missing custom_data replacement blocked (T25); Invalid custom_data replacement quarantined (T26); Cancelled in-period replacement blocked (T27); Cancelled after-period replacement allowed (T28); Active replacement blocked (T29); Cross-user custom_data ownership isolation (T30)`
+      );
+    } finally {
+      saasStore.restoreSnapshot();
+      saasStore.setTestMode(false);
+    }
+  } catch (e: any) {
+    assert(false, 'Sprint 13 Billing Boundary Final Hardening (Tests 20 - 30)', e.message);
   }
 
   console.log('\n--- FINAL TEST SUMMARY ---');

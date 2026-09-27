@@ -131,25 +131,32 @@ export async function processLemonSqueezyWebhook(
 
         // 2. Resolve target internal user safely
         let targetUserId: string | null = null;
+        let resolvedViaCustomData = false;
 
         // Check custom_data.user_id passed during server checkout creation
         if (customData?.user_id && typeof customData.user_id === 'string') {
           const userCandidate = saasStore.getUser(customData.user_id);
           if (userCandidate) {
             targetUserId = userCandidate.id;
+            resolvedViaCustomData = true;
+          } else {
+            // Invalid custom_data.user_id: do NOT fall back to customer ID to assign to another user.
+            console.warn(
+              `[Webhook Quarantined] Invalid custom_data.user_id: ${customData.user_id}. User not found. Event: ${eventName}. Fallback prohibited.`
+            );
           }
         }
 
         // Fallback: look up by existing subscription linked to this providerSubId
-        if (!targetUserId) {
+        if (!targetUserId && !customData?.user_id) {
           const existingSub = saasStore.findSubscriptionByLemonSqueezyId(providerSubId);
           if (existingSub) {
             targetUserId = existingSub.userId;
           }
         }
 
-        // Fallback: look up by customerId linked to a known user
-        if (!targetUserId && customerId) {
+        // Fallback: look up by customerId linked to a known user (only if custom_data was not provided)
+        if (!targetUserId && !customData?.user_id && customerId) {
           const existingSub = saasStore.findSubscriptionByCustomerId(customerId);
           if (existingSub) {
             targetUserId = existingSub.userId;
@@ -221,6 +228,20 @@ export async function processLemonSqueezyWebhook(
             return {
               status: 'ignored',
               message: `Historical event ${eventName} ignored: provider subscription ${providerSubId} does not match current subscription.`,
+            };
+          }
+
+          // Rule 3: For a NEW subscription_created event attempting to replace an existing user's
+          // subscription (e.g. after expiration or cancellation end), ownership MUST be verified via
+          // meta.custom_data.user_id. Customer-ID fallback replacement is strictly prohibited.
+          if (!resolvedViaCustomData) {
+            console.warn(
+              `[Webhook Isolation] Event ${eventId} (subscription_created) for provider subscription ${providerSubId} ignored: cannot replace current subscription ${currentSub.lemonSqueezySubscriptionId} for user ${targetUserId} without verified custom_data.user_id.`
+            );
+            saasStore.recordWebhookProcessed(eventId, eventName, 'ignored');
+            return {
+              status: 'ignored',
+              message: `Replacement event subscription_created ignored: missing or unverified custom_data.user_id for provider subscription ${providerSubId}. Customer-ID fallback replacement prohibited.`,
             };
           }
         }
