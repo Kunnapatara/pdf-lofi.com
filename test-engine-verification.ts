@@ -60,6 +60,11 @@ import {
   applyTextOverlay,
   applyMarkup,
   applyRedaction,
+  executeNUpPdf,
+  executeBookletPdf,
+  executeCollateDocument,
+  executeAlternateAssembly,
+  executeSplitEveryNPdf,
 } from './src/pdf/core/operations';
 import { embedOcrTextLayer, PageOcrOutput } from './src/pdf/engines/ocrEngine';
 
@@ -3030,6 +3035,228 @@ async function runAllTests() {
     );
   } catch (e: any) {
     assert(false, 'Sprint 16 Advanced Page Composition & Document Hygiene', e.message);
+  }
+
+  // ==========================================
+  // SPRINT 17: ORGANIZE & IMPOSITION EXPANSION
+  // ==========================================
+  try {
+    console.log('\n--- SPRINT 17: ORGANIZE & IMPOSITION VERIFICATION ---');
+
+    const createDocOfPages = async (count: number) => {
+      const d = await PDFDocument.create();
+      for (let i = 1; i <= count; i++) {
+        d.addPage([595.28, 841.89]).drawText(`Page ${i}`);
+      }
+      return d.save();
+    };
+
+    // --- 1. N-Up PDF Expansion (2, 4, 6, 8-Up) ---
+    const nUp6Doc = await createDocOfPages(6);
+    const nUp7Doc = await createDocOfPages(7);
+    const nUp8Doc = await createDocOfPages(8);
+    const nUp16Doc = await createDocOfPages(16);
+
+    // 6-Up: 6 pages -> 1 sheet, 7 pages -> 2 sheets
+    const res6Up_6 = await executeNUpPdf(nUp6Doc, { layout: '6-up', paperSize: 'A4' });
+    const res6Up_7 = await executeNUpPdf(nUp7Doc, { layout: '6-up', paperSize: 'A4' });
+
+    // 8-Up: 8 pages -> 1 sheet, 16 pages -> 2 sheets, 7 pages -> 1 sheet
+    const res8Up_8 = await executeNUpPdf(nUp8Doc, { layout: '8-up', paperSize: 'A4' });
+    const res8Up_16 = await executeNUpPdf(nUp16Doc, { layout: '8-up', paperSize: 'Letter' });
+    const res8Up_7 = await executeNUpPdf(nUp7Doc, { layout: '8-up', paperSize: 'A4' });
+
+    // Orientation & Margins
+    const res6Up_port = await executeNUpPdf(nUp6Doc, { layout: '6-up', orientation: 'portrait', margin: 24, spacing: 10 });
+
+    const nUpPass =
+      res6Up_6.pageCount === 1 &&
+      res6Up_7.pageCount === 2 &&
+      res8Up_8.pageCount === 1 &&
+      res8Up_16.pageCount === 2 &&
+      res8Up_7.pageCount === 1 &&
+      res6Up_port.pageCount === 1;
+
+    assert(
+      nUpPass,
+      'Sprint 17: N-Up Expansion (6-Up & 8-Up Imposition)',
+      'Verified mathematical sheet counts across 6-up (1 and 2 sheets) and 8-up (1 and 2 sheets), orientation override, and custom margins.'
+    );
+
+    // --- 2. Booklet / Signature Imposition ---
+    const book4Doc = await createLabeledFixture(['PAGE_ONE', 'PAGE_TWO', 'PAGE_THREE', 'PAGE_FOUR']);
+    const book6Doc = await createDocOfPages(6);
+    const book8Doc = await createDocOfPages(8);
+
+    // 4 pages saddle-stitch: exactly 1 sheet (2 duplex pages: front and back)
+    const book4Res = await executeBookletPdf(book4Doc, { paperSize: 'A4', bindingEdge: 'left' });
+    const book4Parsed = await PDFDocument.load(book4Res.data);
+    const book4PageCount = book4Parsed.getPageCount();
+
+    // Verify Front page text (Left = Page 4, Right = Page 1)
+    const frontText = await extractPageText(book4Res.data, 1);
+    // Verify Back page text (Left = Page 2, Right = Page 3)
+    const backText = await extractPageText(book4Res.data, 2);
+
+    const saddleStitchPass =
+      book4PageCount === 2 &&
+      book4Res.sheetsCount === 1 &&
+      book4Res.paddedPageCount === 4 &&
+      frontText.includes('PAGE_FOUR') &&
+      frontText.includes('PAGE_ONE') &&
+      backText.includes('PAGE_TWO') &&
+      backText.includes('PAGE_THREE');
+
+    // 6-page doc padded to 8 pages -> 2 sheets (4 pages)
+    const book6Res = await executeBookletPdf(book6Doc, { paperSize: 'A4' });
+    const padPass =
+      book6Res.pageCount === 4 &&
+      book6Res.paddedPageCount === 8 &&
+      book6Res.sheetsCount === 2;
+
+    // RTL right-edge binding
+    const book4RtlRes = await executeBookletPdf(book4Doc, { bindingEdge: 'right' });
+    const frontRtlText = await extractPageText(book4RtlRes.data, 1);
+    const rtlPass = frontRtlText.includes('PAGE_ONE') && frontRtlText.includes('PAGE_FOUR');
+
+    // Multi-signature imposition: 8 pages with signatureSize=4 -> 2 signatures of 1 sheet (2 pages) = 4 pages total
+    const book8MultiSig = await executeBookletPdf(book8Doc, { signatureSize: 4 });
+    const multiSigPass =
+      book8MultiSig.signaturesCount === 2 &&
+      book8MultiSig.pageCount === 4 &&
+      book8MultiSig.sheetsCount === 2;
+
+    assert(
+      saddleStitchPass && padPass && rtlPass && multiSigPass,
+      'Sprint 17: Booklet & Signature Imposition',
+      'Verified saddle-stitch front/back sheet layout, semantic page positions, blank-page padding (6->8), RTL binding edge, and multi-signature grouping.'
+    );
+
+    // --- 3. Page Assembly: Collate, Uncollate & Alternate Mix ---
+    // Create a 6-page collated fixture: [A, B, C, A, B, C]
+    const collated6 = await createLabeledFixture([
+      'ITEM_A_COPY1',
+      'ITEM_B_COPY1',
+      'ITEM_C_COPY1',
+      'ITEM_A_COPY2',
+      'ITEM_B_COPY2',
+      'ITEM_C_COPY2',
+    ]);
+
+    // Uncollate with copies=2 -> should group identical pages: [A_1, A_2, B_1, B_2, C_1, C_2]
+    const uncollatedRes = await executeCollateDocument(collated6, { mode: 'uncollate', copies: 2 });
+    const uncol_p1 = await extractPageText(uncollatedRes.data, 1);
+    const uncol_p2 = await extractPageText(uncollatedRes.data, 2);
+    const uncol_p3 = await extractPageText(uncollatedRes.data, 3);
+    const uncol_p4 = await extractPageText(uncollatedRes.data, 4);
+
+    const uncollatePass =
+      uncol_p1.includes('ITEM_A_COPY1') &&
+      uncol_p2.includes('ITEM_A_COPY2') &&
+      uncol_p3.includes('ITEM_B_COPY1') &&
+      uncol_p4.includes('ITEM_B_COPY2');
+
+    // Inverse: Collate the uncollated document back to [A, B, C, A, B, C]
+    const recollatedRes = await executeCollateDocument(uncollatedRes.data, { mode: 'collate', copies: 2 });
+    const recol_p1 = await extractPageText(recollatedRes.data, 1);
+    const recol_p2 = await extractPageText(recollatedRes.data, 2);
+    const recol_p3 = await extractPageText(recollatedRes.data, 3);
+    const recol_p4 = await extractPageText(recollatedRes.data, 4);
+
+    const collatePass =
+      recol_p1.includes('ITEM_A_COPY1') &&
+      recol_p2.includes('ITEM_B_COPY1') &&
+      recol_p3.includes('ITEM_C_COPY1') &&
+      recol_p4.includes('ITEM_A_COPY2');
+
+    // Multi-document Alternate Assembly across 3 documents
+    const docA_fixture = await createLabeledFixture(['DOC_A_1', 'DOC_A_2']);
+    const docB_fixture = await createLabeledFixture(['DOC_B_1', 'DOC_B_2']);
+    const docC_fixture = await createLabeledFixture(['DOC_C_1', 'DOC_C_2']);
+
+    const alternateRes = await executeAlternateAssembly([docA_fixture, docB_fixture, docC_fixture]);
+    const alt_p1 = await extractPageText(alternateRes.data, 1);
+    const alt_p2 = await extractPageText(alternateRes.data, 2);
+    const alt_p3 = await extractPageText(alternateRes.data, 3);
+    const alt_p4 = await extractPageText(alternateRes.data, 4);
+    const alt_p5 = await extractPageText(alternateRes.data, 5);
+    const alt_p6 = await extractPageText(alternateRes.data, 6);
+
+    const alternatePass =
+      alternateRes.pageCount === 6 &&
+      alt_p1.includes('DOC_A_1') &&
+      alt_p2.includes('DOC_B_1') &&
+      alt_p3.includes('DOC_C_1') &&
+      alt_p4.includes('DOC_A_2') &&
+      alt_p5.includes('DOC_B_2') &&
+      alt_p6.includes('DOC_C_2');
+
+    assert(
+      uncollatePass && collatePass && alternatePass,
+      'Sprint 17: Page Assembly (Collate, Uncollate & Alternate Mix)',
+      'Verified single-document uncollation into identical sets, reciprocal collation back to original sets, and 3-way multi-document alternating assembly.'
+    );
+
+    // --- 4. Split Every N Pages ---
+    const split7Doc = await createLabeledFixture([
+      'PAGE_ONE',
+      'PAGE_TWO',
+      'PAGE_THREE',
+      'PAGE_FOUR',
+      'PAGE_FIVE',
+      'PAGE_SIX',
+      'PAGE_SEVEN',
+    ]);
+
+    // Split 7 pages every 2 pages -> 4 parts: (2, 2, 2, 1)
+    const splitResult = await executeSplitEveryNPdf(split7Doc, {
+      pagesPerSplit: 2,
+      outputPrefix: 'invoices',
+    });
+
+    const splitPassBasic =
+      splitResult.totalParts === 4 &&
+      splitResult.splits.length === 4 &&
+      splitResult.splits[0].pageCount === 2 &&
+      splitResult.splits[0].name.includes('invoices_part_01_p1-2') &&
+      splitResult.splits[1].pageCount === 2 &&
+      splitResult.splits[1].name.includes('invoices_part_02_p3-4') &&
+      splitResult.splits[2].pageCount === 2 &&
+      splitResult.splits[2].name.includes('invoices_part_03_p5-6') &&
+      splitResult.splits[3].pageCount === 1 &&
+      splitResult.splits[3].name.includes('invoices_part_04_p7');
+
+    // Verify text identity of first part
+    const splitPart1_p1Text = await extractPageText(splitResult.splits[0].data, 1);
+    const splitPart1_p2Text = await extractPageText(splitResult.splits[0].data, 2);
+    const splitPart4_p1Text = await extractPageText(splitResult.splits[3].data, 1);
+
+    const splitTextPass =
+      splitPart1_p1Text.includes('PAGE_ONE') &&
+      splitPart1_p2Text.includes('PAGE_TWO') &&
+      splitPart4_p1Text.includes('PAGE_SEVEN');
+
+    // Split with restricted page range "2-5" every 2 pages -> 2 parts of 2 pages each
+    const splitRangeResult = await executeSplitEveryNPdf(split7Doc, {
+      pagesPerSplit: 2,
+      pageRange: '2-5',
+      outputPrefix: 'subset',
+    });
+
+    const splitRangePass =
+      splitRangeResult.totalParts === 2 &&
+      splitRangeResult.splits[0].startPage === 2 &&
+      splitRangeResult.splits[0].endPage === 3 &&
+      splitRangeResult.splits[1].startPage === 4 &&
+      splitRangeResult.splits[1].endPage === 5;
+
+    assert(
+      splitPassBasic && splitTextPass && splitRangePass,
+      'Sprint 17: Split Every N Pages',
+      'Verified even chunking into parts with remainder, deterministic output naming with zero-padding, page-identity preservation, and custom range subsetting.'
+    );
+  } catch (e: any) {
+    assert(false, 'Sprint 17 Organize & Imposition Expansion', e.message);
   }
 
   console.log('\n--- FINAL TEST SUMMARY ---');

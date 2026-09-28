@@ -50,6 +50,7 @@ import {
   Sparkles,
   Zap,
   FileSpreadsheet,
+  BookOpen,
 } from 'lucide-react';
 import { AppView, ActiveTab } from '../../types/pdf';
 
@@ -240,14 +241,47 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
   },
   {
     id: 'n-up-pdf',
-    name: 'N-Up PDF (2-Up / 4-Up)',
-    shortDescription: 'Composite multiple pages onto a single sheet (2-up or 4-up) preserving vector content and aspect ratio.',
+    name: 'N-Up PDF',
+    shortDescription: 'Arrange multiple PDF pages onto each output sheet with professional layout controls while preserving vector content.',
     category: 'organize',
     status: 'available',
     processingLocation: 'local',
     routeView: 'organize',
     workspaceTab: 'organize',
-    keywords: ['n-up', '2-up', '4-up', 'multiple pages per sheet', 'grid layout', 'print layout', 'imposition'],
+    keywords: ['n-up', '2-up', '4-up', '6-up', '8-up', 'imposition', 'grid layout', 'print layout', 'multiple pages per sheet'],
+  },
+  {
+    id: 'booklet-pdf',
+    name: 'Booklet PDF',
+    shortDescription: 'Arrange PDF pages into print-ready booklet signatures with automatic imposition and blank-page handling.',
+    category: 'organize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'organize',
+    workspaceTab: 'organize',
+    keywords: ['booklet', 'signature', 'imposition', 'saddle stitch', 'fold', 'print booklet', 'duplex', 'binding'],
+  },
+  {
+    id: 'page-assembly',
+    name: 'Page Assembly',
+    shortDescription: 'Reorder pages across source documents using collate, uncollate, and alternating assembly patterns.',
+    category: 'organize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'organize',
+    workspaceTab: 'organize',
+    keywords: ['page assembly', 'collate', 'uncollate', 'alternate', 'sequence', 'interleave', 'assembly', 'sets'],
+  },
+  {
+    id: 'split-every-n',
+    name: 'Split Every N Pages',
+    shortDescription: 'Split a PDF into evenly sized page groups with automatic output numbering.',
+    category: 'organize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'organize',
+    workspaceTab: 'organize',
+    keywords: ['split every n', 'split batch', 'chunk', 'split fixed', 'even split', 'batch split', 'group pages'],
   },
 
   // ==========================================
@@ -881,6 +915,12 @@ export function getToolIcon(id: string, className = 'w-6 h-6'): React.ReactNode 
       return React.createElement(ArrowUpDown, { className });
     case 'n-up-pdf':
       return React.createElement(Layers, { className });
+    case 'booklet-pdf':
+      return React.createElement(BookOpen, { className });
+    case 'page-assembly':
+      return React.createElement(ArrowUpDown, { className });
+    case 'split-every-n':
+      return React.createElement(Scissors, { className });
     case 'page-selection':
       return React.createElement(CheckSquare, { className });
 

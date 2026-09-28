@@ -21,6 +21,8 @@ import {
   X,
   Layers,
   Upload,
+  BookOpen,
+  CheckCircle2,
 } from 'lucide-react';
 import { LocalDocument, DocumentPageInfo } from '../../types/pdf';
 import { generatePageThumbnail } from '../../pdf/rendering/thumbnailService';
@@ -29,6 +31,8 @@ import { triggerLocalDownload } from '../../pdf/export/exportService';
 import { ProcessingBadge } from '../../components/status/ProcessingBadge';
 import { CropMargins } from '../../pdf/core/operations/cropOperation';
 import { StandardPageSize } from '../../pdf/core/operations/resizeOperation';
+import { NUpLayout } from '../../pdf/core/operations/nUpOperation';
+import { SplitPart } from '../../pdf/core/operations/splitEveryNOperation';
 
 interface OrganizeTabProps {
   document: LocalDocument;
@@ -56,14 +60,31 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
   const [resizePreset, setResizePreset] = useState<StandardPageSize>('a4');
   const [scaleContent, setScaleContent] = useState(true);
 
-  // Modals for N-Up & Interleave
+  // Modals for N-Up, Booklet, Assembly & Split Every N
   const [showNUpModal, setShowNUpModal] = useState(false);
-  const [nUpLayout, setNUpLayout] = useState<'2-up' | '4-up'>('2-up');
+  const [nUpLayout, setNUpLayout] = useState<NUpLayout>('2-up');
   const [nUpPaper, setNUpPaper] = useState<'A4' | 'Letter'>('A4');
+  const [nUpOrientation, setNUpOrientation] = useState<'auto' | 'landscape' | 'portrait'>('auto');
+  const [nUpMargin, setNUpMargin] = useState<number>(18);
+  const [nUpSpacing, setNUpSpacing] = useState<number>(12);
+  const [nUpPageOrder, setNUpPageOrder] = useState<'horizontal' | 'vertical'>('horizontal');
 
-  const [showInterleaveModal, setShowInterleaveModal] = useState(false);
-  const [interleaveDocB, setInterleaveDocB] = useState<{ name: string; data: Uint8Array; pageCount: number } | null>(null);
-  const [interleaveReverseB, setInterleaveReverseB] = useState(false);
+  const [showBookletModal, setShowBookletModal] = useState(false);
+  const [bookletPaper, setBookletPaper] = useState<'A4' | 'Letter'>('A4');
+  const [bookletSigSize, setBookletSigSize] = useState<'all' | 4 | 8 | 16>('all');
+  const [bookletBinding, setBookletBinding] = useState<'left' | 'right'>('left');
+
+  const [showAssemblyModal, setShowAssemblyModal] = useState(false);
+  const [assemblyMode, setAssemblyMode] = useState<'collate' | 'uncollate' | 'alternate'>('collate');
+  const [assemblyCopies, setAssemblyCopies] = useState<number>(2);
+  const [assemblyDocB, setAssemblyDocB] = useState<{ name: string; data: Uint8Array; pageCount: number } | null>(null);
+  const [assemblyReverseB, setAssemblyReverseB] = useState(false);
+
+  const [showSplitEveryNModal, setShowSplitEveryNModal] = useState(false);
+  const [splitEveryN, setSplitEveryN] = useState<number>(2);
+  const [splitRange, setSplitRange] = useState<string>('');
+  const [splitPrefix, setSplitPrefix] = useState<string>('');
+  const [splitResults, setSplitResults] = useState<SplitPart[] | null>(null);
 
   // Initialize page metadata array
   useEffect(() => {
@@ -370,7 +391,7 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
     }
   };
 
-  // Apply N-Up (2-up or 4-up)
+  // Apply N-Up (2-up, 4-up, 6-up, or 8-up)
   const handleApplyNUp = async () => {
     if (!document.data) return;
     setIsProcessing(true);
@@ -382,6 +403,10 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
       const updated = await documentService.nUpDocument(document, {
         layout: nUpLayout,
         paperSize: nUpPaper,
+        orientation: nUpOrientation,
+        margin: nUpMargin,
+        spacing: nUpSpacing,
+        pageOrder: nUpPageOrder,
       });
       if (updated.data) {
         await onUpdateDocumentData(updated.data, updated.pageCount, `N-Up (${nUpLayout})`);
@@ -394,8 +419,35 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
     }
   };
 
-  // Select Document B for Interleaving
-  const handleInterleaveDocBSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Apply Booklet Imposition
+  const handleApplyBooklet = async () => {
+    if (!document.data) return;
+    setIsProcessing(true);
+    setProcessingMsg(`Generating print-ready booklet imposition on ${bookletPaper}...`);
+    setErrorMsg(null);
+    setShowBookletModal(false);
+
+    try {
+      const { document: updated, result } = await documentService.bookletDocument(document, {
+        paperSize: bookletPaper,
+        signatureSize: bookletSigSize,
+        bindingEdge: bookletBinding,
+      });
+      if (updated.data) {
+        await onUpdateDocumentData(updated.data, updated.pageCount, 'Booklet PDF');
+        setSuccessNotice(
+          `Successfully created booklet! ${result.sheetsCount} duplex sheets (${result.paddedPageCount} padded pages, ${result.signaturesCount} signature(s)).`
+        );
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Booklet imposition failed');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Select Document B for Page Assembly (Alternate Mix)
+  const handleAssemblyDocBSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
     try {
@@ -403,7 +455,7 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
       const uint8 = new Uint8Array(arrayBuffer);
       const { loadPdfLibDoc } = await import('../../pdf/engines/pdfLibEngine');
       const loaded = await loadPdfLibDoc(uint8);
-      setInterleaveDocB({
+      setAssemblyDocB({
         name: file.name,
         data: uint8,
         pageCount: loaded.getPageCount(),
@@ -413,27 +465,65 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
     }
   };
 
-  // Apply Interleave / Alternate Mix
-  const handleApplyInterleave = async () => {
-    if (!document.data || !interleaveDocB) return;
+  // Apply Page Assembly (Collate / Uncollate / Alternate Mix)
+  const handleApplyAssembly = async () => {
+    if (!document.data) return;
     setIsProcessing(true);
-    setProcessingMsg('Interleaving Document A and Document B...');
     setErrorMsg(null);
-    setShowInterleaveModal(false);
+    setShowAssemblyModal(false);
 
     try {
-      const result = await documentService.interleaveDocuments(
-        document.data,
-        interleaveDocB.data,
-        { reverseB: interleaveReverseB }
-      );
-      await onUpdateDocumentData(result.data, result.pageCount, 'Interleave PDFs');
-      setSuccessNotice(`Successfully interleaved ${document.name} with ${interleaveDocB.name} (${result.pageCount} total pages).`);
+      if (assemblyMode === 'alternate') {
+        if (!assemblyDocB) {
+          throw new Error('Please select a second document for Alternate Mix.');
+        }
+        setProcessingMsg('Interleaving Document A and Document B...');
+        const result = await documentService.interleaveDocuments(
+          document.data,
+          assemblyDocB.data,
+          { reverseB: assemblyReverseB }
+        );
+        await onUpdateDocumentData(result.data, result.pageCount, 'Page Assembly: Alternate Mix');
+        setSuccessNotice(`Successfully assembled ${document.name} with ${assemblyDocB.name} (${result.pageCount} total pages).`);
+        setAssemblyDocB(null);
+      } else {
+        const opName = assemblyMode === 'collate' ? 'Collate Sets' : 'Uncollate Sets';
+        setProcessingMsg(`${opName}...`);
+        const updated = await documentService.collateDocument(document, {
+          mode: assemblyMode,
+          copies: assemblyCopies,
+        });
+        if (updated.data) {
+          await onUpdateDocumentData(updated.data, updated.pageCount, `Page Assembly: ${opName}`);
+          setSuccessNotice(`Successfully reordered document using ${opName} (${assemblyCopies} sets).`);
+        }
+      }
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Interleave failed');
+      setErrorMsg(err instanceof Error ? err.message : 'Page assembly failed');
     } finally {
       setIsProcessing(false);
-      setInterleaveDocB(null);
+    }
+  };
+
+  // Apply Split Every N Pages
+  const handleApplySplitEveryN = async () => {
+    if (!document.data) return;
+    setIsProcessing(true);
+    setProcessingMsg(`Splitting document every ${splitEveryN} pages...`);
+    setErrorMsg(null);
+
+    try {
+      const result = await documentService.splitEveryN(document, {
+        pagesPerSplit: splitEveryN,
+        pageRange: splitRange,
+        outputPrefix: splitPrefix || document.name.replace(/\.pdf$/i, ''),
+      });
+      setSplitResults(result.splits);
+      setSuccessNotice(`Successfully split document into ${result.totalParts} files!`);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Split Every N failed');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -557,20 +647,43 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
               onClick={() => setShowNUpModal(true)}
               disabled={isProcessing}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all cursor-pointer"
-              title="Composite multiple pages onto one sheet (2-up or 4-up)"
+              title="Composite multiple pages onto one sheet (2, 4, 6, or 8-up)"
             >
               <Layers className="w-3.5 h-3.5 text-stone-600" />
               <span>N-Up</span>
             </button>
 
             <button
-              onClick={() => setShowInterleaveModal(true)}
+              onClick={() => setShowBookletModal(true)}
               disabled={isProcessing}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all cursor-pointer"
-              title="Alternate and mix pages from two PDF documents (e.g. duplex scans)"
+              title="Impose pages for folded booklet printing"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-stone-600" />
+              <span>Booklet</span>
+            </button>
+
+            <button
+              onClick={() => setShowAssemblyModal(true)}
+              disabled={isProcessing}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all cursor-pointer"
+              title="Collate, uncollate, or interleave documents"
             >
               <ArrowUpDown className="w-3.5 h-3.5 text-stone-600" />
-              <span>Interleave</span>
+              <span>Assembly</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setSplitResults(null);
+                setShowSplitEveryNModal(true);
+              }}
+              disabled={isProcessing}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all cursor-pointer"
+              title="Split document into equal chunks of N pages"
+            >
+              <Scissors className="w-3.5 h-3.5 text-stone-600" />
+              <span>Split Every N</span>
             </button>
           </div>
 
@@ -944,14 +1057,14 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
         </div>
       )}
 
-      {/* N-Up Imposition Modal */}
+      {/* N-Up Imposition Modal (2-Up, 4-Up, 6-Up, 8-Up) */}
       {showNUpModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl border border-stone-200 p-6 max-w-md w-full shadow-2xl space-y-4">
+          <div className="bg-white rounded-3xl border border-stone-200 p-6 max-w-lg w-full shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-stone-100">
               <div className="flex items-center gap-2">
                 <Layers className="w-5 h-5 text-orange-600" />
-                <h3 className="text-base font-bold text-stone-900">N-Up Imposition (2-Up / 4-Up)</h3>
+                <h3 className="text-base font-bold text-stone-900">N-Up PDF Imposition</h3>
               </div>
               <button onClick={() => setShowNUpModal(false)} className="text-stone-400 hover:text-stone-700 cursor-pointer">
                 <X className="w-5 h-5" />
@@ -959,56 +1072,106 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
             </div>
 
             <p className="text-xs text-stone-500">
-              Place multiple pages onto a single sheet for booklet printing or compact distribution. Source vector graphics and text are preserved without rasterization.
+              Arrange multiple source pages onto each output sheet with professional imposition controls while preserving vector content.
             </p>
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="font-semibold text-stone-700">Imposition Grid</label>
-                <div className="grid grid-cols-2 gap-2 mt-1">
-                  <button
-                    type="button"
-                    onClick={() => setNUpLayout('2-up')}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold cursor-pointer transition-all ${
-                      nUpLayout === '2-up'
-                        ? 'bg-orange-500 text-white border-orange-500 shadow-xs'
-                        : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100'
-                    }`}
-                  >
-                    2-Up (Side-by-Side)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNUpLayout('4-up')}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold cursor-pointer transition-all ${
-                      nUpLayout === '4-up'
-                        ? 'bg-orange-500 text-white border-orange-500 shadow-xs'
-                        : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100'
-                    }`}
-                  >
-                    4-Up (2×2 Grid)
-                  </button>
+                <label className="font-semibold text-stone-700">Imposition Grid Layout</label>
+                <div className="grid grid-cols-4 gap-2 mt-1">
+                  {(['2-up', '4-up', '6-up', '8-up'] as NUpLayout[]).map((lay) => (
+                    <button
+                      key={lay}
+                      type="button"
+                      onClick={() => setNUpLayout(lay)}
+                      className={`py-2 px-2.5 rounded-xl border text-xs font-bold cursor-pointer transition-all ${
+                        nUpLayout === lay
+                          ? 'bg-orange-500 text-white border-orange-500 shadow-xs'
+                          : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100'
+                      }`}
+                    >
+                      {lay.toUpperCase()}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              <div>
-                <label className="font-semibold text-stone-700">Output Paper Format</label>
-                <select
-                  value={nUpPaper}
-                  onChange={(e) => setNUpPaper(e.target.value as 'A4' | 'Letter')}
-                  className="w-full mt-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
-                >
-                  <option value="A4">A4 (210 × 297 mm)</option>
-                  <option value="Letter">US Letter (8.5 × 11 in)</option>
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold text-stone-700">Paper Format</label>
+                  <select
+                    value={nUpPaper}
+                    onChange={(e) => setNUpPaper(e.target.value as 'A4' | 'Letter')}
+                    className="w-full mt-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                  >
+                    <option value="A4">A4 (210 × 297 mm)</option>
+                    <option value="Letter">US Letter (8.5 × 11 in)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-stone-700">Sheet Orientation</label>
+                  <select
+                    value={nUpOrientation}
+                    onChange={(e) => setNUpOrientation(e.target.value as 'auto' | 'landscape' | 'portrait')}
+                    className="w-full mt-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                  >
+                    <option value="auto">Auto (Recommended)</option>
+                    <option value="landscape">Landscape</option>
+                    <option value="portrait">Portrait</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold text-stone-700">Page Traversal Order</label>
+                  <select
+                    value={nUpPageOrder}
+                    onChange={(e) => setNUpPageOrder(e.target.value as 'horizontal' | 'vertical')}
+                    className="w-full mt-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                  >
+                    <option value="horizontal">Horizontal (Left to Right)</option>
+                    <option value="vertical">Vertical (Top to Bottom)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-stone-700">Margins & Spacing</label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <input
+                      type="number"
+                      min="0"
+                      max="72"
+                      value={nUpMargin}
+                      onChange={(e) => setNUpMargin(Math.max(0, parseInt(e.target.value) || 0))}
+                      title="Margin (pt)"
+                      className="w-1/2 px-2 py-1.5 bg-stone-50 border border-stone-200 rounded-xl text-center"
+                    />
+                    <span className="text-stone-400">/</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="72"
+                      value={nUpSpacing}
+                      onChange={(e) => setNUpSpacing(Math.max(0, parseInt(e.target.value) || 0))}
+                      title="Spacing between pages (pt)"
+                      className="w-1/2 px-2 py-1.5 bg-stone-50 border border-stone-200 rounded-xl text-center"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl text-[11px] text-stone-600">
                 {document.pageCount} source pages will produce{' '}
                 <strong>
-                  {Math.ceil(document.pageCount / (nUpLayout === '2-up' ? 2 : 4))} sheet(s)
+                  {Math.ceil(
+                    document.pageCount /
+                      (nUpLayout === '2-up' ? 2 : nUpLayout === '4-up' ? 4 : nUpLayout === '6-up' ? 6 : 8)
+                  )}{' '}
+                  sheet(s)
                 </strong>{' '}
-                in {nUpLayout === '2-up' ? 'Landscape' : 'Portrait'} orientation.
+                with {nUpLayout} layout.
               </div>
             </div>
 
@@ -1031,81 +1194,383 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
         </div>
       )}
 
-      {/* Interleave / Alternate Mix Modal */}
-      {showInterleaveModal && (
+      {/* Booklet PDF Modal */}
+      {showBookletModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl border border-stone-200 p-6 max-w-md w-full shadow-2xl space-y-4">
+          <div className="bg-white rounded-3xl border border-stone-200 p-6 max-w-lg w-full shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-stone-100">
               <div className="flex items-center gap-2">
-                <ArrowUpDown className="w-5 h-5 text-orange-600" />
-                <h3 className="text-base font-bold text-stone-900">Interleave & Alternate Mix</h3>
+                <BookOpen className="w-5 h-5 text-orange-600" />
+                <h3 className="text-base font-bold text-stone-900">Booklet PDF Imposition</h3>
               </div>
-              <button onClick={() => setShowInterleaveModal(false)} className="text-stone-400 hover:text-stone-700 cursor-pointer">
+              <button onClick={() => setShowBookletModal(false)} className="text-stone-400 hover:text-stone-700 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <p className="text-xs text-stone-500">
-              Combine this document (Doc A) with a second document (Doc B) into alternating pages (A1, B1, A2, B2...). Ideal for duplex sheet-fed scanner workflows.
+              Arrange PDF pages into print-ready booklet signatures with automatic imposition, duplex layout, and blank-page padding.
             </p>
 
             <div className="space-y-3 text-xs">
-              <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl text-stone-700">
-                <span className="font-bold">Document A:</span> {document.name} ({document.pageCount} pages)
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold text-stone-700">Signature Size</label>
+                  <select
+                    value={bookletSigSize}
+                    onChange={(e) =>
+                      setBookletSigSize(e.target.value === 'all' ? 'all' : (parseInt(e.target.value) as 4 | 8 | 16))
+                    }
+                    className="w-full mt-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                  >
+                    <option value="all">Single Signature (Saddle-Stitch All)</option>
+                    <option value="4">4 Pages / Signature (1 Sheet)</option>
+                    <option value="8">8 Pages / Signature (2 Sheets)</option>
+                    <option value="16">16 Pages / Signature (4 Sheets)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-stone-700">Output Paper Format</label>
+                  <select
+                    value={bookletPaper}
+                    onChange={(e) => setBookletPaper(e.target.value as 'A4' | 'Letter')}
+                    className="w-full mt-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                  >
+                    <option value="A4">A4 (210 × 297 mm)</option>
+                    <option value="Letter">US Letter (8.5 × 11 in)</option>
+                  </select>
+                </div>
               </div>
 
               <div>
-                <label className="font-semibold text-stone-700 block mb-1">Select Document B</label>
-                <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-stone-200 hover:border-orange-400 rounded-2xl cursor-pointer bg-stone-50/50 hover:bg-orange-50/20 transition-all">
-                  <Upload className="w-4 h-4 text-stone-400" />
-                  <span className="text-xs font-medium text-stone-600">
-                    {interleaveDocB ? interleaveDocB.name : 'Choose Second PDF File...'}
-                  </span>
-                  <input
-                    type="file"
-                    accept="application/pdf"
-                    onChange={handleInterleaveDocBSelect}
-                    className="hidden"
-                  />
-                </label>
-                {interleaveDocB && (
-                  <p className="text-[11px] text-green-700 font-semibold mt-1">
-                    ✓ Document B loaded: {interleaveDocB.pageCount} pages
-                  </p>
-                )}
+                <label className="font-semibold text-stone-700">Binding Edge</label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setBookletBinding('left')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold cursor-pointer transition-all ${
+                      bookletBinding === 'left'
+                        ? 'bg-orange-500 text-white border-orange-500 shadow-xs'
+                        : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100'
+                    }`}
+                  >
+                    Left Edge (Standard LTR)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBookletBinding('right')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold cursor-pointer transition-all ${
+                      bookletBinding === 'right'
+                        ? 'bg-orange-500 text-white border-orange-500 shadow-xs'
+                        : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100'
+                    }`}
+                  >
+                    Right Edge (RTL / Manga)
+                  </button>
+                </div>
               </div>
 
-              <label className="flex items-center gap-2 cursor-pointer pt-1">
-                <input
-                  type="checkbox"
-                  checked={interleaveReverseB}
-                  onChange={(e) => setInterleaveReverseB(e.target.checked)}
-                  className="rounded border-stone-300 text-orange-600 focus:ring-orange-500"
-                />
-                <span className="font-medium text-stone-700">
-                  Reverse Document B (Duplex scanner back-sides)
-                </span>
-              </label>
+              <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl text-[11px] text-stone-600 space-y-1">
+                <div>
+                  <strong>{document.pageCount} source pages</strong> will be padded with{' '}
+                  <strong>{Math.ceil(document.pageCount / 4) * 4 - document.pageCount} blank page(s)</strong> to reach{' '}
+                  <strong>{Math.ceil(document.pageCount / 4) * 4} total booklet pages</strong>.
+                </div>
+                <div className="text-stone-500">
+                  Produces <strong>{Math.ceil(document.pageCount / 4)} duplex sheets</strong> (2 sides per sheet, 2 pages per side).
+                </div>
+              </div>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
               <button
+                onClick={() => setShowBookletModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApplyBooklet}
+                disabled={isProcessing}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
+              >
+                Generate Booklet
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Page Assembly Modal (Collate / Uncollate / Alternate Mix) */}
+      {showAssemblyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl border border-stone-200 p-6 max-w-lg w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-stone-100">
+              <div className="flex items-center gap-2">
+                <ArrowUpDown className="w-5 h-5 text-orange-600" />
+                <h3 className="text-base font-bold text-stone-900">Page Assembly</h3>
+              </div>
+              <button onClick={() => setShowAssemblyModal(false)} className="text-stone-400 hover:text-stone-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-500">
+              Reorder pages across source documents using collate, uncollate, and alternating assembly patterns.
+            </p>
+
+            <div className="flex rounded-xl bg-stone-100 p-1">
+              {(['collate', 'uncollate', 'alternate'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setAssemblyMode(m)}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-bold capitalize transition-all cursor-pointer ${
+                    assemblyMode === m ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-600 hover:text-stone-900'
+                  }`}
+                >
+                  {m === 'alternate' ? 'Alternate Mix' : `${m} Sets`}
+                </button>
+              ))}
+            </div>
+
+            {assemblyMode === 'alternate' ? (
+              <div className="space-y-3 text-xs">
+                <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl text-stone-700">
+                  <span className="font-bold">Document A:</span> {document.name} ({document.pageCount} pages)
+                </div>
+
+                <div>
+                  <label className="font-semibold text-stone-700 block mb-1">Select Document B</label>
+                  <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-stone-200 hover:border-orange-400 rounded-2xl cursor-pointer bg-stone-50/50 hover:bg-orange-50/20 transition-all">
+                    <Upload className="w-4 h-4 text-stone-400" />
+                    <span className="text-xs font-medium text-stone-600">
+                      {assemblyDocB ? assemblyDocB.name : 'Choose Second PDF File...'}
+                    </span>
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      onChange={handleAssemblyDocBSelect}
+                      className="hidden"
+                    />
+                  </label>
+                  {assemblyDocB && (
+                    <p className="text-[11px] text-green-700 font-semibold mt-1">
+                      ✓ Document B loaded: {assemblyDocB.pageCount} pages
+                    </p>
+                  )}
+                </div>
+
+                <label className="flex items-center gap-2 cursor-pointer pt-1">
+                  <input
+                    type="checkbox"
+                    checked={assemblyReverseB}
+                    onChange={(e) => setAssemblyReverseB(e.target.checked)}
+                    className="rounded border-stone-300 text-orange-600 focus:ring-orange-500"
+                  />
+                  <span className="font-medium text-stone-700">
+                    Reverse Document B (Duplex scanner back-sides)
+                  </span>
+                </label>
+              </div>
+            ) : (
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="font-semibold text-stone-700">Number of Copied Sets</label>
+                  <input
+                    type="number"
+                    min="2"
+                    max={Math.max(2, document.pageCount)}
+                    value={assemblyCopies}
+                    onChange={(e) => setAssemblyCopies(Math.max(2, parseInt(e.target.value) || 2))}
+                    className="w-full mt-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                  />
+                </div>
+
+                <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl text-[11px] text-stone-600">
+                  {assemblyMode === 'collate' ? (
+                    <span>
+                      Reconstructs complete document sets from uncollated order (e.g. 1,1,2,2 → 1,2,1,2).
+                      Each set will contain ~{Math.ceil(document.pageCount / assemblyCopies)} pages.
+                    </span>
+                  ) : (
+                    <span>
+                      Groups identical page positions together across {assemblyCopies} sets (e.g. 1,2,1,2 → 1,1,2,2).
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+              <button
                 onClick={() => {
-                  setShowInterleaveModal(false);
-                  setInterleaveDocB(null);
+                  setShowAssemblyModal(false);
+                  setAssemblyDocB(null);
                 }}
                 className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 cursor-pointer"
               >
                 Cancel
               </button>
               <button
-                onClick={handleApplyInterleave}
-                disabled={isProcessing || !interleaveDocB}
+                onClick={handleApplyAssembly}
+                disabled={isProcessing || (assemblyMode === 'alternate' && !assemblyDocB)}
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white cursor-pointer disabled:opacity-50"
               >
-                Interleave Documents
+                Apply Assembly
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Split Every N Pages Modal */}
+      {showSplitEveryNModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl border border-stone-200 p-6 max-w-lg w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-stone-100">
+              <div className="flex items-center gap-2">
+                <Scissors className="w-5 h-5 text-orange-600" />
+                <h3 className="text-base font-bold text-stone-900">Split Every N Pages</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowSplitEveryNModal(false);
+                  setSplitResults(null);
+                }}
+                className="text-stone-400 hover:text-stone-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-500">
+              Split this PDF into evenly sized page groups with automatic output numbering and immediate download.
+            </p>
+
+            {!splitResults ? (
+              <div className="space-y-3 text-xs">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-semibold text-stone-700">Pages per File (N)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max={document.pageCount}
+                      value={splitEveryN}
+                      onChange={(e) => setSplitEveryN(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-full mt-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-stone-700">Optional Page Range</label>
+                    <input
+                      type="text"
+                      placeholder={`e.g. 1-${document.pageCount} or leave empty`}
+                      value={splitRange}
+                      onChange={(e) => setSplitRange(e.target.value)}
+                      className="w-full mt-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-stone-700">Output Filename Prefix</label>
+                  <input
+                    type="text"
+                    placeholder={document.name.replace(/\.pdf$/i, '')}
+                    value={splitPrefix}
+                    onChange={(e) => setSplitPrefix(e.target.value)}
+                    className="w-full mt-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                  />
+                </div>
+
+                <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl text-[11px] text-stone-600">
+                  Splitting {document.pageCount} pages into groups of {splitEveryN} will produce{' '}
+                  <strong>{Math.ceil(document.pageCount / splitEveryN)} output file(s)</strong>.
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+                  <button
+                    onClick={() => setShowSplitEveryNModal(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleApplySplitEveryN}
+                    disabled={isProcessing}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
+                  >
+                    Split Document
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-stone-900">
+                    Generated {splitResults.length} Files:
+                  </span>
+                  <button
+                    onClick={() => {
+                      splitResults.forEach((part) => {
+                        triggerLocalDownload(part.data, part.name);
+                      });
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-orange-500 text-white hover:bg-orange-600 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download All Parts</span>
+                  </button>
+                </div>
+
+                <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+                  {splitResults.map((part) => (
+                    <div
+                      key={part.partIndex}
+                      className="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between gap-2"
+                    >
+                      <div className="truncate">
+                        <div className="font-semibold text-stone-900 truncate" title={part.name}>
+                          {part.name}
+                        </div>
+                        <div className="text-[11px] text-stone-500">
+                          Pages {part.startPage}–{part.endPage} ({part.pageCount} {part.pageCount === 1 ? 'page' : 'pages'})
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => triggerLocalDownload(part.data, part.name)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-white border border-stone-200 text-stone-700 hover:bg-stone-100 cursor-pointer shrink-0"
+                      >
+                        <Download className="w-3 h-3 text-stone-600" />
+                        <span>Save</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+                  <button
+                    onClick={() => setSplitResults(null)}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 cursor-pointer"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowSplitEveryNModal(false);
+                      setSplitResults(null);
+                    }}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-stone-800 hover:bg-stone-900 text-white cursor-pointer"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

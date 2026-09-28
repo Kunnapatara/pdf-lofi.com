@@ -1,17 +1,21 @@
 /**
  * N-Up PDF Operation for PDF-LoFi.
- * Composites multiple source pages onto a single sheet (2-up or 4-up).
+ * Composites multiple source pages onto a single sheet (2-up, 4-up, 6-up, 8-up).
  * Preserves source page vector content, fonts, and graphics using pdf-lib embedPage.
  */
 import { PDFName } from 'pdf-lib';
 import { loadPdfLibDoc, savePdfLibDoc, createEmptyPdfDoc } from '../../engines/pdfLibEngine';
 import { OperationResult } from './rotateOperation';
 
+export type NUpLayout = '2-up' | '4-up' | '6-up' | '8-up';
+
 export interface NUpOptions {
-  layout: '2-up' | '4-up';
+  layout: NUpLayout;
   paperSize?: 'A4' | 'Letter';
   margin?: number;
   spacing?: number;
+  orientation?: 'portrait' | 'landscape' | 'auto';
+  pageOrder?: 'horizontal' | 'vertical';
 }
 
 const PAPER_SIZES: Record<'A4' | 'Letter', { portrait: [number, number]; landscape: [number, number] }> = {
@@ -27,8 +31,10 @@ const PAPER_SIZES: Record<'A4' | 'Letter', { portrait: [number, number]; landsca
 
 /**
  * Executes N-Up page imposition on a PDF document.
- * 2-up arranges 2 pages side-by-side on a landscape sheet.
- * 4-up arranges 4 pages in a 2x2 grid on a portrait sheet.
+ * 2-up: 2 pages side-by-side on landscape sheet (or 1x2 on portrait)
+ * 4-up: 4 pages in 2x2 grid on portrait sheet (or landscape)
+ * 6-up: 6 pages in 3x2 grid on landscape sheet (or 2x3 on portrait)
+ * 8-up: 8 pages in 4x2 grid on landscape sheet (or 2x4 on portrait)
  * Unused slots on the final sheet remain blank.
  */
 export async function executeNUpPdf(
@@ -51,95 +57,90 @@ export async function executeNUpPdf(
   const margin = options.margin !== undefined ? Math.max(0, options.margin) : 18;
   const spacing = options.spacing !== undefined ? Math.max(0, options.spacing) : 12;
 
-  const perSheet = layout === '2-up' ? 2 : 4;
+  // Determine sheet orientation and grid rows/columns
+  let isLandscape: boolean;
+  if (options.orientation && options.orientation !== 'auto') {
+    isLandscape = options.orientation === 'landscape';
+  } else {
+    // Standard defaults: 4-up defaults to portrait, 2-up/6-up/8-up default to landscape
+    isLandscape = layout === '4-up' ? false : true;
+  }
+
+  let cols: number;
+  let rows: number;
+
+  if (layout === '2-up') {
+    cols = isLandscape ? 2 : 1;
+    rows = isLandscape ? 1 : 2;
+  } else if (layout === '4-up') {
+    cols = 2;
+    rows = 2;
+  } else if (layout === '6-up') {
+    cols = isLandscape ? 3 : 2;
+    rows = isLandscape ? 2 : 3;
+  } else if (layout === '8-up') {
+    cols = isLandscape ? 4 : 2;
+    rows = isLandscape ? 2 : 4;
+  } else {
+    throw new Error(`Unsupported N-Up layout: ${layout}`);
+  }
+
+  const perSheet = cols * rows;
   const sheetCount = Math.ceil(srcPageCount / perSheet);
 
   const outDoc = await createEmptyPdfDoc();
 
-  // For 2-up: landscape sheet pairs portrait pages side-by-side
-  // For 4-up: portrait sheet arranges 4 pages in a 2x2 grid
-  const sheetDims =
-    layout === '2-up'
-      ? PAPER_SIZES[paper].landscape
-      : PAPER_SIZES[paper].portrait;
+  const sheetDims = isLandscape
+    ? PAPER_SIZES[paper].landscape
+    : PAPER_SIZES[paper].portrait;
 
   const [sheetW, sheetH] = sheetDims;
+
+  const slotW = (sheetW - 2 * margin - (cols - 1) * spacing) / cols;
+  const slotH = (sheetH - 2 * margin - (rows - 1) * spacing) / rows;
 
   for (let s = 0; s < sheetCount; s++) {
     const outPage = outDoc.addPage([sheetW, sheetH]);
 
-    if (layout === '2-up') {
-      // 2 horizontal slots side-by-side
-      const slotW = (sheetW - 2 * margin - spacing) / 2;
-      const slotH = sheetH - 2 * margin;
+    for (let slot = 0; slot < perSheet; slot++) {
+      const pageIdx = s * perSheet + slot;
+      if (pageIdx >= srcPageCount) break;
 
-      for (let slot = 0; slot < 2; slot++) {
-        const pageIdx = s * 2 + slot;
-        if (pageIdx >= srcPageCount) break;
-
-        const srcPage = srcDoc.getPage(pageIdx);
-        // Ensure page has a /Contents stream so embedPage does not throw on empty/blank pages
-        if (!srcPage.node.has(PDFName.of('Contents'))) {
-          srcPage.drawText('', { x: 0, y: 0, size: 0.1 });
-        }
-        const embedded = await outDoc.embedPage(srcPage);
-
-        // Aspect ratio fit
-        const scale = Math.min(slotW / embedded.width, slotH / embedded.height);
-        const drawW = embedded.width * scale;
-        const drawH = embedded.height * scale;
-
-        const slotX = margin + slot * (slotW + spacing);
-        const slotY = margin;
-
-        const drawX = slotX + (slotW - drawW) / 2;
-        const drawY = slotY + (slotH - drawH) / 2;
-
-        outPage.drawPage(embedded, {
-          x: drawX,
-          y: drawY,
-          width: drawW,
-          height: drawH,
-        });
+      const srcPage = srcDoc.getPage(pageIdx);
+      // Ensure page has a /Contents stream so embedPage does not throw on empty/blank pages
+      if (!srcPage.node.has(PDFName.of('Contents'))) {
+        srcPage.drawText('', { x: 0, y: 0, size: 0.1 });
       }
-    } else {
-      // 4-up: 2x2 grid (2 columns, 2 rows)
-      // Slot 0: Top-Left, Slot 1: Top-Right, Slot 2: Bottom-Left, Slot 3: Bottom-Right
-      const slotW = (sheetW - 2 * margin - spacing) / 2;
-      const slotH = (sheetH - 2 * margin - spacing) / 2;
+      const embedded = await outDoc.embedPage(srcPage);
 
-      for (let slot = 0; slot < 4; slot++) {
-        const pageIdx = s * 4 + slot;
-        if (pageIdx >= srcPageCount) break;
-
-        const srcPage = srcDoc.getPage(pageIdx);
-        // Ensure page has a /Contents stream so embedPage does not throw on empty/blank pages
-        if (!srcPage.node.has(PDFName.of('Contents'))) {
-          srcPage.drawText('', { x: 0, y: 0, size: 0.1 });
-        }
-        const embedded = await outDoc.embedPage(srcPage);
-
-        const col = slot % 2; // 0 = left, 1 = right
-        const row = Math.floor(slot / 2); // 0 = top, 1 = bottom
-
-        const slotX = margin + col * (slotW + spacing);
-        // In PDF coordinates, bottom is y=0, so top row is row 0 -> y = margin + slotH + spacing
-        const slotY = row === 0 ? margin + slotH + spacing : margin;
-
-        const scale = Math.min(slotW / embedded.width, slotH / embedded.height);
-        const drawW = embedded.width * scale;
-        const drawH = embedded.height * scale;
-
-        const drawX = slotX + (slotW - drawW) / 2;
-        const drawY = slotY + (slotH - drawH) / 2;
-
-        outPage.drawPage(embedded, {
-          x: drawX,
-          y: drawY,
-          width: drawW,
-          height: drawH,
-        });
+      let col: number;
+      let row: number;
+      if (options.pageOrder === 'vertical') {
+        col = Math.floor(slot / rows);
+        row = slot % rows;
+      } else {
+        col = slot % cols;
+        row = Math.floor(slot / cols);
       }
+
+      const slotX = margin + col * (slotW + spacing);
+      // In PDF coordinates, y=0 is at the bottom, so row 0 (top row) is at highest y
+      const slotY = margin + (rows - 1 - row) * (slotH + spacing);
+
+      // Aspect ratio fit
+      const scale = Math.min(slotW / embedded.width, slotH / embedded.height);
+      const drawW = embedded.width * scale;
+      const drawH = embedded.height * scale;
+
+      const drawX = slotX + (slotW - drawW) / 2;
+      const drawY = slotY + (slotH - drawH) / 2;
+
+      outPage.drawPage(embedded, {
+        x: drawX,
+        y: drawY,
+        width: drawW,
+        height: drawH,
+      });
     }
   }
 
