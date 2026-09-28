@@ -19,6 +19,8 @@ import {
   Maximize2,
   FileX,
   X,
+  Layers,
+  Upload,
 } from 'lucide-react';
 import { LocalDocument, DocumentPageInfo } from '../../types/pdf';
 import { generatePageThumbnail } from '../../pdf/rendering/thumbnailService';
@@ -53,6 +55,15 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
   const [showResizeModal, setShowResizeModal] = useState(false);
   const [resizePreset, setResizePreset] = useState<StandardPageSize>('a4');
   const [scaleContent, setScaleContent] = useState(true);
+
+  // Modals for N-Up & Interleave
+  const [showNUpModal, setShowNUpModal] = useState(false);
+  const [nUpLayout, setNUpLayout] = useState<'2-up' | '4-up'>('2-up');
+  const [nUpPaper, setNUpPaper] = useState<'A4' | 'Letter'>('A4');
+
+  const [showInterleaveModal, setShowInterleaveModal] = useState(false);
+  const [interleaveDocB, setInterleaveDocB] = useState<{ name: string; data: Uint8Array; pageCount: number } | null>(null);
+  const [interleaveReverseB, setInterleaveReverseB] = useState(false);
 
   // Initialize page metadata array
   useEffect(() => {
@@ -359,6 +370,73 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
     }
   };
 
+  // Apply N-Up (2-up or 4-up)
+  const handleApplyNUp = async () => {
+    if (!document.data) return;
+    setIsProcessing(true);
+    setProcessingMsg(`Generating ${nUpLayout} imposition on ${nUpPaper} sheet...`);
+    setErrorMsg(null);
+    setShowNUpModal(false);
+
+    try {
+      const updated = await documentService.nUpDocument(document, {
+        layout: nUpLayout,
+        paperSize: nUpPaper,
+      });
+      if (updated.data) {
+        await onUpdateDocumentData(updated.data, updated.pageCount, `N-Up (${nUpLayout})`);
+        setSuccessNotice(`Successfully composited document into ${nUpLayout} layout (${updated.pageCount} sheets).`);
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'N-Up imposition failed');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Select Document B for Interleaving
+  const handleInterleaveDocBSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8 = new Uint8Array(arrayBuffer);
+      const { loadPdfLibDoc } = await import('../../pdf/engines/pdfLibEngine');
+      const loaded = await loadPdfLibDoc(uint8);
+      setInterleaveDocB({
+        name: file.name,
+        data: uint8,
+        pageCount: loaded.getPageCount(),
+      });
+    } catch (err) {
+      setErrorMsg(`Could not read Document B: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  // Apply Interleave / Alternate Mix
+  const handleApplyInterleave = async () => {
+    if (!document.data || !interleaveDocB) return;
+    setIsProcessing(true);
+    setProcessingMsg('Interleaving Document A and Document B...');
+    setErrorMsg(null);
+    setShowInterleaveModal(false);
+
+    try {
+      const result = await documentService.interleaveDocuments(
+        document.data,
+        interleaveDocB.data,
+        { reverseB: interleaveReverseB }
+      );
+      await onUpdateDocumentData(result.data, result.pageCount, 'Interleave PDFs');
+      setSuccessNotice(`Successfully interleaved ${document.name} with ${interleaveDocB.name} (${result.pageCount} total pages).`);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Interleave failed');
+    } finally {
+      setIsProcessing(false);
+      setInterleaveDocB(null);
+    }
+  };
+
   const handleDownloadCurrent = () => {
     if (document.data) {
       triggerLocalDownload(document.data, document.name);
@@ -473,6 +551,26 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
             >
               <Maximize2 className="w-3.5 h-3.5 text-stone-600" />
               <span>Resize</span>
+            </button>
+
+            <button
+              onClick={() => setShowNUpModal(true)}
+              disabled={isProcessing}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all cursor-pointer"
+              title="Composite multiple pages onto one sheet (2-up or 4-up)"
+            >
+              <Layers className="w-3.5 h-3.5 text-stone-600" />
+              <span>N-Up</span>
+            </button>
+
+            <button
+              onClick={() => setShowInterleaveModal(true)}
+              disabled={isProcessing}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all cursor-pointer"
+              title="Alternate and mix pages from two PDF documents (e.g. duplex scans)"
+            >
+              <ArrowUpDown className="w-3.5 h-3.5 text-stone-600" />
+              <span>Interleave</span>
             </button>
           </div>
 
@@ -840,6 +938,172 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
               >
                 Standardize Dimensions
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* N-Up Imposition Modal */}
+      {showNUpModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl border border-stone-200 p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-stone-100">
+              <div className="flex items-center gap-2">
+                <Layers className="w-5 h-5 text-orange-600" />
+                <h3 className="text-base font-bold text-stone-900">N-Up Imposition (2-Up / 4-Up)</h3>
+              </div>
+              <button onClick={() => setShowNUpModal(false)} className="text-stone-400 hover:text-stone-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-500">
+              Place multiple pages onto a single sheet for booklet printing or compact distribution. Source vector graphics and text are preserved without rasterization.
+            </p>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="font-semibold text-stone-700">Imposition Grid</label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setNUpLayout('2-up')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold cursor-pointer transition-all ${
+                      nUpLayout === '2-up'
+                        ? 'bg-orange-500 text-white border-orange-500 shadow-xs'
+                        : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100'
+                    }`}
+                  >
+                    2-Up (Side-by-Side)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNUpLayout('4-up')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold cursor-pointer transition-all ${
+                      nUpLayout === '4-up'
+                        ? 'bg-orange-500 text-white border-orange-500 shadow-xs'
+                        : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100'
+                    }`}
+                  >
+                    4-Up (2×2 Grid)
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-semibold text-stone-700">Output Paper Format</label>
+                <select
+                  value={nUpPaper}
+                  onChange={(e) => setNUpPaper(e.target.value as 'A4' | 'Letter')}
+                  className="w-full mt-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                >
+                  <option value="A4">A4 (210 × 297 mm)</option>
+                  <option value="Letter">US Letter (8.5 × 11 in)</option>
+                </select>
+              </div>
+
+              <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl text-[11px] text-stone-600">
+                {document.pageCount} source pages will produce{' '}
+                <strong>
+                  {Math.ceil(document.pageCount / (nUpLayout === '2-up' ? 2 : 4))} sheet(s)
+                </strong>{' '}
+                in {nUpLayout === '2-up' ? 'Landscape' : 'Portrait'} orientation.
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+              <button
+                onClick={() => setShowNUpModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApplyNUp}
+                disabled={isProcessing}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
+              >
+                Generate {nUpLayout}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Interleave / Alternate Mix Modal */}
+      {showInterleaveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl border border-stone-200 p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-stone-100">
+              <div className="flex items-center gap-2">
+                <ArrowUpDown className="w-5 h-5 text-orange-600" />
+                <h3 className="text-base font-bold text-stone-900">Interleave & Alternate Mix</h3>
+              </div>
+              <button onClick={() => setShowInterleaveModal(false)} className="text-stone-400 hover:text-stone-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-500">
+              Combine this document (Doc A) with a second document (Doc B) into alternating pages (A1, B1, A2, B2...). Ideal for duplex sheet-fed scanner workflows.
+            </p>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl text-stone-700">
+                <span className="font-bold">Document A:</span> {document.name} ({document.pageCount} pages)
+              </div>
+
+              <div>
+                <label className="font-semibold text-stone-700 block mb-1">Select Document B</label>
+                <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-stone-200 hover:border-orange-400 rounded-2xl cursor-pointer bg-stone-50/50 hover:bg-orange-50/20 transition-all">
+                  <Upload className="w-4 h-4 text-stone-400" />
+                  <span className="text-xs font-medium text-stone-600">
+                    {interleaveDocB ? interleaveDocB.name : 'Choose Second PDF File...'}
+                  </span>
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    onChange={handleInterleaveDocBSelect}
+                    className="hidden"
+                  />
+                </label>
+                {interleaveDocB && (
+                  <p className="text-[11px] text-green-700 font-semibold mt-1">
+                    ✓ Document B loaded: {interleaveDocB.pageCount} pages
+                  </p>
+                )}
+              </div>
+
+              <label className="flex items-center gap-2 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={interleaveReverseB}
+                  onChange={(e) => setInterleaveReverseB(e.target.checked)}
+                  className="rounded border-stone-300 text-orange-600 focus:ring-orange-500"
+                />
+                <span className="font-medium text-stone-700">
+                  Reverse Document B (Duplex scanner back-sides)
+                </span>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+              <button
+                onClick={() => {
+                  setShowInterleaveModal(false);
+                  setInterleaveDocB(null);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApplyInterleave}
+                disabled={isProcessing || !interleaveDocB}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white cursor-pointer disabled:opacity-50"
+              >
+                Interleave Documents
               </button>
             </div>
           </div>

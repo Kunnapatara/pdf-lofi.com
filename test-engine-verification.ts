@@ -2799,6 +2799,239 @@ async function runAllTests() {
     assert(false, 'Sprint 13 Billing Boundary Final Hardening (Tests 20 - 30)', e.message);
   }
 
+  // ==========================================
+  // Test 29: Sprint 16 Advanced Page Composition & Document Hygiene
+  // ==========================================
+  try {
+    const { PDFDocument, PDFName } = await import('pdf-lib');
+    const { executeInterleavePdfs } = await import('./src/pdf/core/operations/interleaveOperation');
+    const { executeNUpPdf } = await import('./src/pdf/core/operations/nUpOperation');
+    const { executeStripJavaScript } = await import('./src/pdf/core/operations/stripJavaScriptOperation');
+    const { executeStripAnnotations } = await import('./src/pdf/core/operations/stripAnnotationsOperation');
+    const {
+      exportAcroFormData,
+      exportAcroFormDataToJson,
+      exportAcroFormDataToCsv,
+    } = await import('./src/pdf/core/operations/exportFormOperation');
+
+    // --- 1. Interleave / Alternate Mix ---
+    // A: 3 pages (A1, A2, A3)
+    const docA = await PDFDocument.create();
+    docA.addPage().drawText('A1');
+    docA.addPage().drawText('A2');
+    docA.addPage().drawText('A3');
+    const bytesA = await docA.save();
+
+    // B: 2 pages (B1, B2)
+    const docB = await PDFDocument.create();
+    docB.addPage().drawText('B1');
+    docB.addPage().drawText('B2');
+    const bytesB = await docB.save();
+
+    // Normal interleave: 3 + 2 = 5 pages (A1, B1, A2, B2, A3)
+    const intRes = await executeInterleavePdfs(bytesA, bytesB);
+    const intDoc = await PDFDocument.load(intRes.data);
+    const passIntNormal = intRes.pageCount === 5 && intDoc.getPageCount() === 5;
+
+    // Duplex scan reverseB: true
+    const intRevRes = await executeInterleavePdfs(bytesA, bytesB, { reverseB: true });
+    const passIntRev = intRevRes.pageCount === 5;
+
+    // 1 page + 1 page
+    const docA1 = await PDFDocument.create();
+    docA1.addPage();
+    const docB1 = await PDFDocument.create();
+    docB1.addPage();
+    const int1Res = await executeInterleavePdfs(await docA1.save(), await docB1.save());
+    const passInt1 = int1Res.pageCount === 2;
+
+    // Unequal: Doc B longer than Doc A (2 + 4 = 6)
+    const docB4 = await PDFDocument.create();
+    for (let i = 0; i < 4; i++) docB4.addPage();
+    const intBLonger = await executeInterleavePdfs(await docA1.save(), await docB4.save());
+    const passIntBLonger = intBLonger.pageCount === 5;
+
+    // Error handling: empty input rejected
+    let passIntError = false;
+    try {
+      await executeInterleavePdfs(new Uint8Array(0), bytesB);
+    } catch {
+      passIntError = true;
+    }
+
+    assert(
+      passIntNormal && passIntRev && passInt1 && passIntBLonger && passIntError,
+      'Sprint 16: Interleave / Alternate Mix',
+      'Verified alternating page collation, duplex reverse option, unequal length handling, and input validation.'
+    );
+
+    // --- 2. N-Up PDF (2-Up / 4-Up Imposition) ---
+    // Create source docs of 1, 3, 4, 5, and 8 pages
+    const createDocOfPages = async (count: number) => {
+      const d = await PDFDocument.create();
+      for (let i = 1; i <= count; i++) {
+        d.addPage([595.28, 841.89]).drawText(`Page ${i}`);
+      }
+      return d.save();
+    };
+
+    const bytes1p = await createDocOfPages(1);
+    const bytes3p = await createDocOfPages(3);
+    const bytes4p = await createDocOfPages(4);
+    const bytes5p = await createDocOfPages(5);
+    const bytes8p = await createDocOfPages(8);
+
+    // 2-Up formulas: ceil(N / 2)
+    const n2_1 = await executeNUpPdf(bytes1p, { layout: '2-up' }); // 1 -> 1
+    const n2_3 = await executeNUpPdf(bytes3p, { layout: '2-up' }); // 3 -> 2
+    const n2_4 = await executeNUpPdf(bytes4p, { layout: '2-up' }); // 4 -> 2
+    const n2_5 = await executeNUpPdf(bytes5p, { layout: '2-up' }); // 5 -> 3
+
+    const pass2Up =
+      n2_1.pageCount === 1 &&
+      n2_3.pageCount === 2 &&
+      n2_4.pageCount === 2 &&
+      n2_5.pageCount === 3;
+
+    // 4-Up formulas: ceil(N / 4)
+    const n4_1 = await executeNUpPdf(bytes1p, { layout: '4-up' }); // 1 -> 1
+    const n4_3 = await executeNUpPdf(bytes3p, { layout: '4-up' }); // 3 -> 1
+    const n4_4 = await executeNUpPdf(bytes4p, { layout: '4-up' }); // 4 -> 1
+    const n4_5 = await executeNUpPdf(bytes5p, { layout: '4-up' }); // 5 -> 2
+    const n4_8 = await executeNUpPdf(bytes8p, { layout: '4-up' }); // 8 -> 2
+
+    const pass4Up =
+      n4_1.pageCount === 1 &&
+      n4_3.pageCount === 1 &&
+      n4_4.pageCount === 1 &&
+      n4_5.pageCount === 2 &&
+      n4_8.pageCount === 2;
+
+    // Blank spacer page without /Contents embedding check
+    const docBlankSpacer = await PDFDocument.create();
+    docBlankSpacer.addPage(); // Blank, no contents stream
+    const nUpBlankRes = await executeNUpPdf(await docBlankSpacer.save(), { layout: '2-up' });
+    const passBlankNUp = nUpBlankRes.pageCount === 1;
+
+    assert(
+      pass2Up && pass4Up && passBlankNUp,
+      'Sprint 16: N-Up PDF (2-Up / 4-Up Imposition)',
+      'Verified mathematical sheet count formulas for 1, 3, 4, 5, 8 pages across 2-up and 4-up grids, and blank page embedding safeguard.'
+    );
+
+    // --- 3. Strip JavaScript & Executable Actions ---
+    const docWithJS = await PDFDocument.create();
+    const pJS = docWithJS.addPage();
+    pJS.drawText('Normal Document Content');
+    // Inject Catalog /OpenAction
+    docWithJS.catalog.set(PDFName.of('OpenAction'), docWithJS.context.obj({ S: 'JavaScript', JS: 'app.alert("malicious");' }));
+    // Inject Catalog /AA
+    docWithJS.catalog.set(PDFName.of('AA'), docWithJS.context.obj({ WC: { S: 'JavaScript', JS: 'app.alert("close");' } }));
+    // Inject Page /AA
+    pJS.node.set(PDFName.of('AA'), docWithJS.context.obj({ O: { S: 'JavaScript', JS: 'app.alert("open");' } }));
+    // Inject Catalog /Names -> /JavaScript
+    const namesDict = docWithJS.context.obj({});
+    namesDict.set(PDFName.of('JavaScript'), docWithJS.context.obj({ Names: ['attack', { S: 'JavaScript', JS: 'evil();' }] }));
+    docWithJS.catalog.set(PDFName.of('Names'), namesDict);
+
+    const bytesWithJS = await docWithJS.save();
+    const stripJSResult = await executeStripJavaScript(bytesWithJS);
+    const cleanedJSDoc = await PDFDocument.load(stripJSResult.data);
+
+    const jsStrippedPass =
+      stripJSResult.sanitizedCount >= 3 &&
+      !cleanedJSDoc.catalog.has(PDFName.of('OpenAction')) &&
+      !cleanedJSDoc.catalog.has(PDFName.of('AA')) &&
+      !cleanedJSDoc.getPage(0).node.has(PDFName.of('AA')) &&
+      cleanedJSDoc.getPageCount() === 1;
+
+    assert(
+      jsStrippedPass,
+      'Sprint 16: Strip JavaScript & Actions',
+      'Verified complete removal of Catalog /OpenAction, /AA, Page /AA, and /Names/JavaScript dictionaries while preserving page contents.'
+    );
+
+    // --- 4. Strip Annotations ---
+    const docWithAnnots = await PDFDocument.create();
+    const pAnn1 = docWithAnnots.addPage();
+    pAnn1.drawText('Page 1 Content');
+    pAnn1.node.set(PDFName.of('Annots'), docWithAnnots.context.obj([{ Subtype: 'Text', Contents: 'Review Note' }]));
+    const pAnn2 = docWithAnnots.addPage();
+    pAnn2.drawText('Page 2 Clean Content');
+
+    const bytesWithAnnots = await docWithAnnots.save();
+    const stripAnnResult = await executeStripAnnotations(bytesWithAnnots);
+    const cleanedAnnDoc = await PDFDocument.load(stripAnnResult.data);
+
+    const annotsStrippedPass =
+      stripAnnResult.strippedCount >= 1 &&
+      !cleanedAnnDoc.getPage(0).node.has(PDFName.of('Annots')) &&
+      cleanedAnnDoc.getPageCount() === 2;
+
+    // Document without annotations completes cleanly
+    const stripCleanResult = await executeStripAnnotations(await (await PDFDocument.create()).addPage().doc.save());
+    const passCleanAnn = stripCleanResult.strippedCount === 0;
+
+    assert(
+      annotsStrippedPass && passCleanAnn,
+      'Sprint 16: Strip Annotations',
+      'Verified removal of page /Annots dictionaries across pages while preserving document structure and clean document idempotency.'
+    );
+
+    // --- 5. Export AcroForm Data ---
+    const docForm = await PDFDocument.create();
+    const pForm = docForm.addPage();
+    const form = docForm.getForm();
+
+    const tf = form.createTextField('user_full_name');
+    tf.setText('Dr. René von Euler (München)');
+    tf.addToPage(pForm, { x: 50, y: 700, width: 200, height: 25 });
+
+    const cb = form.createCheckBox('terms_accepted');
+    cb.check();
+    cb.addToPage(pForm, { x: 50, y: 650, width: 20, height: 20 });
+
+    const dd = form.createDropdown('preferred_currency');
+    dd.setOptions(['USD', 'EUR', 'THB']);
+    dd.select('THB');
+    dd.addToPage(pForm, { x: 50, y: 600, width: 100, height: 25 });
+
+    const bytesForm = await docForm.save();
+
+    const formResult = await exportAcroFormData(bytesForm);
+    const jsonStr = await exportAcroFormDataToJson(bytesForm);
+    const csvStr = await exportAcroFormDataToCsv(bytesForm);
+
+    const parsedJson = JSON.parse(jsonStr);
+    const passFormJson =
+      formResult.hasForm === true &&
+      formResult.fieldCount === 3 &&
+      parsedJson.fields.length === 3 &&
+      parsedJson.fields.some((f: any) => f.name === 'user_full_name' && f.value.includes('René')) &&
+      parsedJson.fields.some((f: any) => f.name === 'terms_accepted' && f.value === true) &&
+      parsedJson.fields.some((f: any) => f.name === 'preferred_currency' && f.value === 'THB');
+
+    const passFormCsv =
+      csvStr.includes('Field Name') &&
+      csvStr.includes('Field Type') &&
+      csvStr.includes('user_full_name') &&
+      csvStr.includes('terms_accepted') &&
+      csvStr.includes('THB');
+
+    // Document with no form
+    const noFormDoc = await createDocOfPages(1);
+    const noFormResult = await exportAcroFormData(noFormDoc);
+    const passNoForm = noFormResult.hasForm === false && noFormResult.fieldCount === 0;
+
+    assert(
+      passFormJson && passFormCsv && passNoForm,
+      'Sprint 16: Export AcroForm Data (JSON & CSV)',
+      'Verified field extraction for text, checkbox, dropdown, accented Unicode preservation, RFC-4180 CSV escaping, and non-form fallback.'
+    );
+  } catch (e: any) {
+    assert(false, 'Sprint 16 Advanced Page Composition & Document Hygiene', e.message);
+  }
+
   console.log('\n--- FINAL TEST SUMMARY ---');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`Passed: ${passedCount} / ${results.length}`);

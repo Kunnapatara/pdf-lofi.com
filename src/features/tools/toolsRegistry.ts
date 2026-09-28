@@ -49,6 +49,7 @@ import {
   ListOrdered,
   Sparkles,
   Zap,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { AppView, ActiveTab } from '../../types/pdf';
 
@@ -225,6 +226,28 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     routeView: 'organize',
     workspaceTab: 'organize',
     keywords: ['select', 'even', 'odd', 'invert', 'range', 'multiselect'],
+  },
+  {
+    id: 'interleave-pdf',
+    name: 'Interleave & Mix',
+    shortDescription: 'Combine two single-sided scanned PDFs into one alternating sequence with optional reverse duplex order.',
+    category: 'organize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'organize',
+    workspaceTab: 'organize',
+    keywords: ['interleave', 'alternate', 'mix', 'duplex scan', 'collate', 'odd even'],
+  },
+  {
+    id: 'n-up-pdf',
+    name: 'N-Up PDF (2-Up / 4-Up)',
+    shortDescription: 'Composite multiple pages onto a single sheet (2-up or 4-up) preserving vector content and aspect ratio.',
+    category: 'organize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'organize',
+    workspaceTab: 'organize',
+    keywords: ['n-up', '2-up', '4-up', 'multiple pages per sheet', 'grid layout', 'print layout', 'imposition'],
   },
 
   // ==========================================
@@ -507,6 +530,17 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     keywords: ['dropdown', 'select', 'combobox', 'list'],
   },
   {
+    id: 'export-form-data',
+    name: 'Export Form Data',
+    shortDescription: 'Extract AcroForm field values (text, checkboxes, radio groups, dropdowns) to structured JSON or CSV.',
+    category: 'forms',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'forms',
+    workspaceTab: 'forms',
+    keywords: ['export form', 'form data', 'json form', 'csv form', 'extract fields', 'acroform'],
+  },
+  {
     id: 'forms-flatten',
     name: 'Flatten Form Fields',
     shortDescription: 'Lock interactive fields permanently into static vector page graphics.',
@@ -542,6 +576,28 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     routeView: 'security',
     workspaceTab: 'security',
     keywords: ['redact', 'blackout', 'censor', 'mask', 'confidential', 'sanitize', 'visual blackout'],
+  },
+  {
+    id: 'strip-javascript',
+    name: 'Strip JavaScript & Actions',
+    shortDescription: 'Sanitize PDF executable structures by removing /JavaScript, /OpenAction, /AA, and catalog script dictionaries.',
+    category: 'security',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'security',
+    workspaceTab: 'security',
+    keywords: ['strip javascript', 'remove actions', 'sanitize scripts', 'remove openaction', 'clean pdf'],
+  },
+  {
+    id: 'strip-annotations',
+    name: 'Strip Annotations',
+    shortDescription: 'Remove all /Annots page objects including comments, markup, popups, and links while preserving page content.',
+    category: 'security',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'security',
+    workspaceTab: 'security',
+    keywords: ['strip annotations', 'remove comments', 'delete annots', 'clean markup', 'remove links'],
   },
   {
     id: 'structural-redaction',
@@ -821,6 +877,10 @@ export function getToolIcon(id: string, className = 'w-6 h-6'): React.ReactNode 
       return React.createElement(Maximize2, { className });
     case 'purge-blank-pages':
       return React.createElement(FileX, { className });
+    case 'interleave-pdf':
+      return React.createElement(ArrowUpDown, { className });
+    case 'n-up-pdf':
+      return React.createElement(Layers, { className });
     case 'page-selection':
       return React.createElement(CheckSquare, { className });
 
@@ -871,6 +931,8 @@ export function getToolIcon(id: string, className = 'w-6 h-6'): React.ReactNode 
       return React.createElement(Radio, { className });
     case 'forms-dropdown':
       return React.createElement(ListOrdered, { className });
+    case 'export-form-data':
+      return React.createElement(FileSpreadsheet, { className });
     case 'forms-flatten':
       return React.createElement(Lock, { className });
     case 'forms-xfa':
@@ -878,6 +940,10 @@ export function getToolIcon(id: string, className = 'w-6 h-6'): React.ReactNode 
 
     case 'redact-pdf':
       return React.createElement(EyeOff, { className });
+    case 'strip-javascript':
+      return React.createElement(Shield, { className });
+    case 'strip-annotations':
+      return React.createElement(FileText, { className });
     case 'protect-pdf':
     case 'encrypt-pdf':
       return React.createElement(Lock, { className });

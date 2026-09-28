@@ -38,6 +38,18 @@ import {
   PageNumberOptions,
   WatermarkOptions,
   OperationResult,
+  executeInterleavePdfs,
+  InterleaveOptions,
+  executeNUpPdf,
+  NUpOptions,
+  executeStripJavaScript,
+  StripJavaScriptResult,
+  executeStripAnnotations,
+  StripAnnotationsResult,
+  exportAcroFormData,
+  exportAcroFormDataToJson,
+  exportAcroFormDataToCsv,
+  AcroFormExportResult,
 } from '../pdf/core/operations/index';
 import { pdfWorkerClient } from '../pdf/workers/workerClient';
 import { isValidPdfHeader } from '../pdf/core/documentModel';
@@ -324,6 +336,67 @@ export class DocumentService {
       updatedAt: Date.now(),
     };
     return { document: updatedDoc, compressionResult };
+  }
+
+  async interleaveDocuments(
+    pdfABytes: Uint8Array,
+    pdfBBytes: Uint8Array,
+    options?: InterleaveOptions
+  ): Promise<OperationResult> {
+    return executeInterleavePdfs(pdfABytes, pdfBBytes, options);
+  }
+
+  async nUpDocument(
+    document: LocalDocument,
+    options: NUpOptions
+  ): Promise<LocalDocument> {
+    return this.safeMutate(document, 'nUpDocument', (data) =>
+      executeNUpPdf(data, options)
+    );
+  }
+
+  async stripJavaScript(
+    document: LocalDocument
+  ): Promise<{ document: LocalDocument; result: StripJavaScriptResult }> {
+    if (!document.data) throw new Error('Document has no binary data');
+    const result = await executeStripJavaScript(document.data);
+    const updatedDoc: LocalDocument = {
+      ...document,
+      data: result.data,
+      pageCount: result.pageCount,
+      size: result.data.length,
+      processingState: 'completed',
+      updatedAt: Date.now(),
+    };
+    return { document: updatedDoc, result };
+  }
+
+  async stripAnnotations(
+    document: LocalDocument
+  ): Promise<{ document: LocalDocument; result: StripAnnotationsResult }> {
+    if (!document.data) throw new Error('Document has no binary data');
+    const result = await executeStripAnnotations(document.data);
+    const updatedDoc: LocalDocument = {
+      ...document,
+      data: result.data,
+      pageCount: result.pageCount,
+      size: result.data.length,
+      processingState: 'completed',
+      updatedAt: Date.now(),
+    };
+    return { document: updatedDoc, result };
+  }
+
+  async exportFormData(data: Uint8Array): Promise<AcroFormExportResult> {
+    return exportAcroFormData(data);
+  }
+
+  async exportFormDataToJson(data: Uint8Array, pretty = true): Promise<string> {
+    return exportAcroFormDataToJson(data, pretty);
+  }
+
+  async exportFormDataToCsv(data: Uint8Array): Promise<string> {
+    return exportAcroFormDataToCsv(data);
   }
 }
 

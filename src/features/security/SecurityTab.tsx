@@ -100,6 +100,54 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
     }
   };
 
+  const handleStripJavaScript = async () => {
+    if (!document.data) return;
+    setIsProcessing(true);
+    setProcessingMsg('Scanning and removing executable scripts and action triggers...');
+    setErrorMsg(null);
+    setSuccessBanner(null);
+
+    try {
+      const { document: updated, result } = await documentService.stripJavaScript(document);
+      if (updated.data) {
+        await onUpdateDocumentData(updated.data, updated.pageCount, 'Strip JavaScript');
+        setSuccessBanner(
+          result.sanitizedCount > 0
+            ? `Successfully removed ${result.sanitizedCount} executable script/action structure(s): ${result.details.join(', ')}.`
+            : 'Document scanned: Zero executable JavaScript or automated action dictionaries found.'
+        );
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to sanitize scripts');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleStripAnnotations = async () => {
+    if (!document.data) return;
+    setIsProcessing(true);
+    setProcessingMsg('Scanning and purging page annotation structures...');
+    setErrorMsg(null);
+    setSuccessBanner(null);
+
+    try {
+      const { document: updated, result } = await documentService.stripAnnotations(document);
+      if (updated.data) {
+        await onUpdateDocumentData(updated.data, updated.pageCount, 'Strip Annotations');
+        setSuccessBanner(
+          result.strippedCount > 0
+            ? `Successfully removed ${result.strippedCount} annotation object(s) across all pages.`
+            : 'Document scanned: Zero /Annots objects found.'
+        );
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to strip annotations');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleDownload = () => {
     if (document.data) {
       triggerLocalDownload(document.data, document.name);
@@ -253,6 +301,57 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
               >
                 {isProcessing ? 'Applying Blackout...' : 'Apply Visual Blackout & Sanitize Metadata'}
               </button>
+            </div>
+          </div>
+
+          {/* Document Hygiene & Sanitization Card */}
+          <div className="bg-white rounded-3xl border border-stone-200/90 p-6 shadow-xs space-y-4">
+            <div className="flex items-center gap-2 text-stone-900 font-bold text-sm">
+              <Shield className="w-4 h-4 text-orange-600" />
+              <span>Document Hygiene & Sanitization</span>
+            </div>
+            <p className="text-xs text-stone-500 leading-relaxed">
+              Remove executable scripts, automated launch actions, and user annotations locally in your browser.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="p-4 bg-stone-50 rounded-2xl border border-stone-100 flex flex-col justify-between space-y-3">
+                <div className="space-y-1">
+                  <div className="font-bold text-xs text-stone-800 flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5 text-stone-600" />
+                    <span>Strip JavaScript</span>
+                  </div>
+                  <p className="text-[11px] text-stone-500 leading-relaxed">
+                    Purges document /OpenAction, catalog /Names/JavaScript, catalog /AA, page /AA, and form calculation triggers.
+                  </p>
+                </div>
+                <button
+                  onClick={handleStripJavaScript}
+                  disabled={isProcessing}
+                  className="w-full py-2 px-3 rounded-xl text-xs font-bold bg-stone-800 hover:bg-stone-700 text-white transition-all shadow-xs disabled:opacity-50 cursor-pointer"
+                >
+                  {isProcessing ? 'Scanning...' : 'Strip JavaScript & Actions'}
+                </button>
+              </div>
+
+              <div className="p-4 bg-stone-50 rounded-2xl border border-stone-100 flex flex-col justify-between space-y-3">
+                <div className="space-y-1">
+                  <div className="font-bold text-xs text-stone-800 flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-stone-600" />
+                    <span>Strip Annotations</span>
+                  </div>
+                  <p className="text-[11px] text-stone-500 leading-relaxed">
+                    Removes all /Annots page dictionary objects (comments, sticky notes, popups, and links). Static page text is preserved.
+                  </p>
+                </div>
+                <button
+                  onClick={handleStripAnnotations}
+                  disabled={isProcessing}
+                  className="w-full py-2 px-3 rounded-xl text-xs font-bold bg-stone-800 hover:bg-stone-700 text-white transition-all shadow-xs disabled:opacity-50 cursor-pointer"
+                >
+                  {isProcessing ? 'Scanning...' : 'Strip All Annotations'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -11,6 +11,7 @@ import {
   Sparkles,
   Info,
   X,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { LocalDocument } from '../../types/pdf';
 import { documentService } from '../../services/documentService';
@@ -138,6 +139,51 @@ export const FormsTab: React.FC<FormsTabProps> = ({
   const handleDownload = () => {
     if (document.data) {
       triggerLocalDownload(document.data, document.name);
+    }
+  };
+
+  const triggerTextDownload = (content: string, filename: string, mimeType: string) => {
+    if (typeof window === 'undefined') return;
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const anchor = window.document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    window.document.body.appendChild(anchor);
+    anchor.click();
+    window.document.body.removeChild(anchor);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  };
+
+  const handleExportJson = async () => {
+    if (!document.data) return;
+    setIsProcessing(true);
+    setProcessingMsg('Exporting AcroForm data to JSON...');
+    try {
+      const jsonStr = await documentService.exportFormDataToJson(document.data);
+      const baseName = document.name.replace(/\.pdf$/i, '');
+      triggerTextDownload(jsonStr, `${baseName}-form-data.json`, 'application/json');
+      setSuccessBanner('Form fields successfully exported to JSON.');
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to export JSON');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleExportCsv = async () => {
+    if (!document.data) return;
+    setIsProcessing(true);
+    setProcessingMsg('Exporting AcroForm data to CSV...');
+    try {
+      const csvStr = await documentService.exportFormDataToCsv(document.data);
+      const baseName = document.name.replace(/\.pdf$/i, '');
+      triggerTextDownload(csvStr, `${baseName}-form-data.csv`, 'text/csv');
+      setSuccessBanner('Form fields successfully exported to CSV.');
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to export CSV');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -312,36 +358,77 @@ export const FormsTab: React.FC<FormsTabProps> = ({
           </div>
 
           {/* Right: Flatten Form Card */}
-          <div className="lg:col-span-4 bg-white rounded-3xl border border-stone-200/90 p-6 shadow-xs flex flex-col justify-between space-y-4">
-            <div className="space-y-3">
+          <div className="lg:col-span-4 flex flex-col space-y-4">
+            {/* Export Form Data Card */}
+            <div className="bg-white rounded-3xl border border-stone-200/90 p-6 shadow-xs space-y-4">
               <div className="border-b border-stone-100 pb-3">
                 <div className="flex items-center gap-2">
-                  <Lock className="w-4 h-4 text-orange-600" />
-                  <h3 className="text-base font-bold text-stone-900">Flatten Form Fields</h3>
+                  <FileSpreadsheet className="w-4 h-4 text-orange-600" />
+                  <h3 className="text-base font-bold text-stone-900">Export Form Data</h3>
                 </div>
                 <p className="text-xs text-stone-500 mt-1">
-                  Permanently burn active form values into static visual page content.
+                  Extract interactive field names and values to JSON or RFC-4180 CSV.
                 </p>
               </div>
 
-              <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl text-xs text-stone-600 space-y-2">
+              <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl text-xs text-stone-600 space-y-1">
                 <p>
-                  Flattening converts interactive text inputs, checkboxes, and buttons into uneditable PDF vector shapes.
+                  Export all field values ({formInspection.fields.length} detected) directly in browser memory without sending document bytes to any server.
                 </p>
-                <p className="font-bold text-stone-800">
-                  Recommended before archiving, printing, or distributing completed contracts.
-                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  onClick={handleExportJson}
+                  disabled={isProcessing}
+                  className="py-2.5 px-3 rounded-2xl text-xs font-bold bg-stone-900 hover:bg-stone-800 text-white cursor-pointer flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 disabled:opacity-50"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export JSON</span>
+                </button>
+                <button
+                  onClick={handleExportCsv}
+                  disabled={isProcessing}
+                  className="py-2.5 px-3 rounded-2xl text-xs font-bold bg-orange-600 hover:bg-orange-700 text-white cursor-pointer flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 disabled:opacity-50"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export CSV</span>
+                </button>
               </div>
             </div>
 
-            <button
-              onClick={handleFlattenForm}
-              disabled={isProcessing}
-              className="w-full py-2.5 rounded-full text-xs font-bold bg-stone-900 hover:bg-stone-800 text-white cursor-pointer flex items-center justify-center gap-2 shadow-xs transition-all active:scale-95"
-            >
-              <Lock className="w-3.5 h-3.5" />
-              <span>Flatten & Lock Form</span>
-            </button>
+            {/* Flatten Form Fields Card */}
+            <div className="bg-white rounded-3xl border border-stone-200/90 p-6 shadow-xs flex flex-col justify-between space-y-4">
+              <div className="space-y-3">
+                <div className="border-b border-stone-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-orange-600" />
+                    <h3 className="text-base font-bold text-stone-900">Flatten Form Fields</h3>
+                  </div>
+                  <p className="text-xs text-stone-500 mt-1">
+                    Permanently burn active form values into static visual page content.
+                  </p>
+                </div>
+
+                <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl text-xs text-stone-600 space-y-2">
+                  <p>
+                    Flattening converts interactive text inputs, checkboxes, and buttons into uneditable PDF vector shapes.
+                  </p>
+                  <p className="font-bold text-stone-800">
+                    Recommended before archiving, printing, or distributing completed contracts.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={handleFlattenForm}
+                disabled={isProcessing}
+                className="w-full py-2.5 rounded-full text-xs font-bold bg-stone-900 hover:bg-stone-800 text-white cursor-pointer flex items-center justify-center gap-2 shadow-xs transition-all active:scale-95"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Flatten & Lock Form</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

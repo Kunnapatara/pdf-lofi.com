@@ -25,3 +25,8 @@ export * from './conversionOperation';
 export * from './textOverlayOperation';
 export * from './markupOperation';
 export * from './redactionOperation';
+export * from './interleaveOperation';
+export * from './nUpOperation';
+export * from './stripJavaScriptOperation';
+export * from './stripAnnotationsOperation';
+export * from './exportFormOperation';
