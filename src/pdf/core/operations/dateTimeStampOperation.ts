@@ -10,6 +10,7 @@ import { loadPdfLibDoc, savePdfLibDoc } from '../../engines/pdfLibEngine';
 import { OperationResult } from './rotateOperation';
 import {
   calculateTextCoordinates,
+  formatLocalIsoDate,
   parseHexColor,
   resolveStandardFont,
   StandardTextPosition,
@@ -85,7 +86,7 @@ export function formatDate(date: Date, format: DateFormat = 'YYYY-MM-DD'): strin
       return `${MONTH_NAMES[date.getMonth()]} ${date.getDate()}, ${yyyy}`;
     case 'YYYY-MM-DD':
     default:
-      return `${yyyy}-${mm}-${dd}`;
+      return formatLocalIsoDate(date);
   }
 }
 

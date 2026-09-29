@@ -12,6 +12,7 @@ import { OperationResult } from './rotateOperation';
 import {
   calculateTextCoordinates,
   expandDynamicTokens,
+  formatLocalIsoDate,
   parseHexColor,
   resolveStandardFont,
   SupportedFontFamily,
@@ -97,8 +98,8 @@ export async function executeAddHeaderFooter(
   const color = parseHexColor(textColorHex);
   const safeOpacity = Math.max(0.05, Math.min(1.0, opacity));
 
-  // Capture execution date string deterministically
-  const dateStr = executionDate || new Date().toISOString().split('T')[0];
+  // Capture execution date string deterministically using local calendar date
+  const dateStr = executionDate || formatLocalIsoDate();
 
   const targetSet = selectedPages && selectedPages.length > 0 ? new Set(selectedPages) : null;
   let modifiedCount = 0;

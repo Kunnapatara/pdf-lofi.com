@@ -9,10 +9,13 @@
 import {
   PDFDocument,
   rgb,
+  degrees,
   StandardFonts,
   PDFRawStream,
   PDFName,
   PDFHexString,
+  PDFString,
+  PDFArray,
 } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 
@@ -78,6 +81,7 @@ import {
   executeAddDateTimeStamp,
   buildStampText,
   executeAddPageBackground,
+  formatLocalIsoDate,
 } from './src/pdf/core/operations';
 import { embedOcrTextLayer, PageOcrOutput } from './src/pdf/engines/ocrEngine';
 
@@ -3633,6 +3637,226 @@ async function runAllTests() {
     );
   } catch (e: any) {
     assert(false, 'Sprint 19 Edit Expansion Verification', e.message);
+  }
+
+  // ==========================================
+  // SPRINT 19.2: PAGE BACKGROUND STRUCTURAL PRESERVATION
+  // ==========================================
+  try {
+    console.log('\n--- SPRINT 19.2: PAGE BACKGROUND STRUCTURAL PRESERVATION ---');
+
+    // Test 1: URI Link Preservation on Targeted Page
+    const s19_2_d1 = await PDFDocument.create();
+    const s19_2_p1 = s19_2_d1.addPage([500, 700]);
+    s19_2_p1.drawText('Page with URI link', { x: 50, y: 500 });
+    const s19_2_link1 = s19_2_d1.context.obj({
+      Type: 'Annot',
+      Subtype: 'Link',
+      Rect: [50, 490, 200, 520],
+      A: { Type: 'Action', S: 'URI', URI: PDFString.of('https://pdf-lofi.com') },
+    });
+    s19_2_p1.node.set(PDFName.of('Annots'), s19_2_d1.context.obj([s19_2_d1.context.register(s19_2_link1)]));
+    const s19_2_b1 = await s19_2_d1.save();
+
+    const s19_2_r1 = await executeAddPageBackground(s19_2_b1, { colorHex: '#FEF3C7' });
+    const s19_2_pdf1 = await pdfjsLib.getDocument({ data: s19_2_r1.data }).promise;
+    const s19_2_annots1 = await (await s19_2_pdf1.getPage(1)).getAnnotations();
+    const t1_pass = s19_2_annots1.length === 1 && s19_2_annots1[0].subtype === 'Link' && s19_2_annots1[0].url.includes('pdf-lofi.com');
+
+    assert(t1_pass, 'Sprint 19.2: Test 1 (URI Links)', 'Target page /Annots and URI link action preserved without reconstruction.');
+
+    // Test 2: Internal GoTo Link Preservation
+    const s19_2_d2 = await PDFDocument.create();
+    const s19_2_p2_1 = s19_2_d2.addPage([500, 700]);
+    s19_2_p2_1.drawText('Page 1 Go to 2', { x: 50, y: 500 });
+    const s19_2_p2_2 = s19_2_d2.addPage([500, 700]);
+    s19_2_p2_2.drawText('Page 2 Target', { x: 50, y: 500 });
+    const s19_2_link2 = s19_2_d2.context.obj({
+      Type: 'Annot',
+      Subtype: 'Link',
+      Rect: [50, 490, 200, 520],
+      Dest: [s19_2_p2_2.ref, 'XYZ', null, null, null],
+    });
+    s19_2_p2_1.node.set(PDFName.of('Annots'), s19_2_d2.context.obj([s19_2_d2.context.register(s19_2_link2)]));
+    const s19_2_b2 = await s19_2_d2.save();
+
+    const s19_2_r2 = await executeAddPageBackground(s19_2_b2, { colorHex: '#FAF8F5' });
+    const s19_2_pdf2 = await pdfjsLib.getDocument({ data: s19_2_r2.data }).promise;
+    const s19_2_annots2 = await (await s19_2_pdf2.getPage(1)).getAnnotations();
+    const t2_pass = s19_2_annots2.length === 1 && s19_2_annots2[0].subtype === 'Link';
+
+    assert(t2_pass, 'Sprint 19.2: Test 2 (Internal Links)', 'Target page internal GoTo link preserved.');
+
+    // Test 3: Ordinary Annotations (Text Note / Callout)
+    const s19_2_d3 = await PDFDocument.create();
+    const s19_2_p3 = s19_2_d3.addPage([500, 700]);
+    s19_2_p3.drawText('Annotation Page', { x: 50, y: 500 });
+    const s19_2_note3 = s19_2_d3.context.obj({
+      Type: 'Annot',
+      Subtype: 'Text',
+      Rect: [100, 100, 130, 130],
+      Contents: PDFString.of('Important Audit Note'),
+    });
+    s19_2_p3.node.set(PDFName.of('Annots'), s19_2_d3.context.obj([s19_2_d3.context.register(s19_2_note3)]));
+    const s19_2_b3 = await s19_2_d3.save();
+
+    const s19_2_r3 = await executeAddPageBackground(s19_2_b3, { colorHex: '#FAF8F5' });
+    const s19_2_pdf3 = await pdfjsLib.getDocument({ data: s19_2_r3.data }).promise;
+    const s19_2_annots3 = await (await s19_2_pdf3.getPage(1)).getAnnotations();
+    const t3_pass = s19_2_annots3.length === 1 && s19_2_annots3[0].subtype === 'Text' && s19_2_annots3[0].contentsObj?.str === 'Important Audit Note';
+
+    assert(t3_pass, 'Sprint 19.2: Test 3 (Ordinary Annotations)', 'Target page text annotation note preserved.');
+
+    // Test 4: AcroForms Preservation
+    const s19_2_d4 = await PDFDocument.create();
+    const s19_2_p4 = s19_2_d4.addPage([500, 700]);
+    s19_2_p4.drawText('Form Page', { x: 50, y: 650 });
+    const s19_2_form4 = s19_2_d4.getForm();
+    const s19_2_tf4 = s19_2_form4.createTextField('user.fullname');
+    s19_2_tf4.setText('Grace Hopper');
+    s19_2_tf4.addToPage(s19_2_p4, { x: 50, y: 550, width: 150, height: 25 });
+    const s19_2_cb4 = s19_2_form4.createCheckBox('agree.terms');
+    s19_2_cb4.check();
+    s19_2_cb4.addToPage(s19_2_p4, { x: 50, y: 500, width: 20, height: 20 });
+    const s19_2_b4 = await s19_2_d4.save();
+
+    const s19_2_r4 = await executeAddPageBackground(s19_2_b4, { colorHex: '#FAF8F5' });
+    const s19_2_d4Out = await PDFDocument.load(s19_2_r4.data);
+    const s19_2_formOut = s19_2_d4Out.getForm();
+    const s19_2_fields = s19_2_formOut.getFields();
+    const s19_2_tfVal = s19_2_formOut.getTextField('user.fullname').getText();
+    const s19_2_cbVal = s19_2_formOut.getCheckBox('agree.terms').isChecked();
+    const t4_pass = s19_2_fields.length === 2 && s19_2_tfVal === 'Grace Hopper' && s19_2_cbVal === true;
+
+    assert(t4_pass, 'Sprint 19.2: Test 4 (AcroForms)', 'Document-level /AcroForm and page widget annotations preserved with field values.');
+
+    // Test 5: Bookmarks / Outlines Preservation
+    const s19_2_d5 = await PDFDocument.create();
+    s19_2_d5.addPage([500, 700]).drawText('Document with Outline', { x: 50, y: 500 });
+    const s19_2_outlineDict = s19_2_d5.context.obj({ Type: 'Outlines', Count: 1 });
+    s19_2_d5.catalog.set(PDFName.of('Outlines'), s19_2_d5.context.register(s19_2_outlineDict));
+    const s19_2_b5 = await s19_2_d5.save();
+
+    const s19_2_r5 = await executeAddPageBackground(s19_2_b5, { colorHex: '#FAF8F5' });
+    const s19_2_d5Out = await PDFDocument.load(s19_2_r5.data);
+    const t5_pass = s19_2_d5Out.catalog.has(PDFName.of('Outlines'));
+
+    assert(t5_pass, 'Sprint 19.2: Test 5 (Outlines / Bookmarks)', 'Document-level Catalog /Outlines preserved.');
+
+    // Test 6: Named Destinations Preservation
+    const s19_2_d6 = await PDFDocument.create();
+    s19_2_d6.addPage([500, 700]).drawText('Dest page', { x: 50, y: 500 });
+    const s19_2_destsDict = s19_2_d6.context.obj({ Chapter1: [s19_2_d6.getPage(0).ref, 'Fit'] });
+    s19_2_d6.catalog.set(PDFName.of('Dests'), s19_2_d6.context.register(s19_2_destsDict));
+    const s19_2_b6 = await s19_2_d6.save();
+
+    const s19_2_r6 = await executeAddPageBackground(s19_2_b6, { colorHex: '#FAF8F5' });
+    const s19_2_d6Out = await PDFDocument.load(s19_2_r6.data);
+    const t6_pass = s19_2_d6Out.catalog.has(PDFName.of('Dests'));
+
+    assert(t6_pass, 'Sprint 19.2: Test 6 (Named Destinations)', 'Document-level Catalog /Dests navigation preserved.');
+
+    // Test 7: Non-zero CropBox Coordinates Preservation
+    const s19_2_d7 = await PDFDocument.create();
+    const s19_2_p7 = s19_2_d7.addPage([500, 700]);
+    s19_2_p7.setMediaBox(0, 0, 500, 700);
+    s19_2_p7.setCropBox(50, 100, 400, 500);
+    s19_2_p7.drawText('CropBox content', { x: 60, y: 150 });
+    const s19_2_b7 = await s19_2_d7.save();
+
+    const s19_2_r7 = await executeAddPageBackground(s19_2_b7, { colorHex: '#FAF8F5' });
+    const s19_2_d7Out = await PDFDocument.load(s19_2_r7.data);
+    const s19_2_p7Out = s19_2_d7Out.getPage(0);
+    const s19_2_cb7 = s19_2_p7Out.getCropBox();
+    const s19_2_mb7 = s19_2_p7Out.getMediaBox();
+    const t7_pass = s19_2_cb7.x === 50 && s19_2_cb7.y === 100 && s19_2_cb7.width === 400 && s19_2_cb7.height === 500 && s19_2_mb7.width === 500 && s19_2_mb7.height === 700;
+
+    assert(t7_pass, 'Sprint 19.2: Test 7 (CropBox Non-zero)', 'Non-zero CropBox offsets and MediaBox dimensions preserved without reset.');
+
+    // Test 8: Rotated Pages Preservation (0, 90, 180, 270)
+    let t8_pass = true;
+    for (const rot of [0, 90, 180, 270]) {
+      const s19_2_d8 = await PDFDocument.create();
+      const s19_2_p8 = s19_2_d8.addPage([400, 600]);
+      s19_2_p8.setRotation(degrees(rot));
+      s19_2_p8.drawText(`Rotated ${rot}`, { x: 50, y: 50 });
+      const s19_2_b8 = await s19_2_d8.save();
+      const s19_2_r8 = await executeAddPageBackground(s19_2_b8, { colorHex: '#FAF8F5' });
+      const s19_2_d8Out = await PDFDocument.load(s19_2_r8.data);
+      if (s19_2_d8Out.getPage(0).getRotation().angle !== rot) t8_pass = false;
+    }
+
+    assert(t8_pass, 'Sprint 19.2: Test 8 (Rotated Pages)', 'Page rotation metadata 0/90/180/270 preserved with underlay.');
+
+    // Test 9: Blank Page with Missing /Contents
+    const s19_2_d9 = await PDFDocument.create();
+    s19_2_d9.addPage([500, 700]); // completely blank, no drawing
+    const s19_2_b9 = await s19_2_d9.save();
+    let t9_pass = false;
+    try {
+      const s19_2_r9 = await executeAddPageBackground(s19_2_b9, { colorHex: '#FEF3C7' });
+      const s19_2_d9Out = await PDFDocument.load(s19_2_r9.data);
+      const s19_2_p9Contents = s19_2_d9Out.getPage(0).node.get(PDFName.of('Contents'));
+      t9_pass = !!s19_2_p9Contents && s19_2_r9.pageCount === 1;
+    } catch {
+      t9_pass = false;
+    }
+
+    assert(t9_pass, 'Sprint 19.2: Test 9 (Blank Pages)', 'Blank page without /Contents receives background stream without MissingPageContentsEmbeddingError.');
+
+    // Test 10: Mixed Target vs Non-target Pages
+    const s19_2_d10 = await PDFDocument.create();
+    const s19_2_p10_1 = s19_2_d10.addPage([500, 700]);
+    s19_2_p10_1.drawText('Target Page 1', { x: 50, y: 500 });
+    const s19_2_l10_1 = s19_2_d10.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [50, 490, 150, 510], A: { Type: 'Action', S: 'URI', URI: PDFString.of('https://p1.com') } });
+    s19_2_p10_1.node.set(PDFName.of('Annots'), s19_2_d10.context.obj([s19_2_d10.context.register(s19_2_l10_1)]));
+
+    const s19_2_p10_2 = s19_2_d10.addPage([500, 700]);
+    s19_2_p10_2.drawText('Non-target Page 2', { x: 50, y: 500 });
+    const s19_2_l10_2 = s19_2_d10.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [50, 490, 150, 510], A: { Type: 'Action', S: 'URI', URI: PDFString.of('https://p2.com') } });
+    s19_2_p10_2.node.set(PDFName.of('Annots'), s19_2_d10.context.obj([s19_2_d10.context.register(s19_2_l10_2)]));
+    const s19_2_b10 = await s19_2_d10.save();
+
+    const s19_2_r10 = await executeAddPageBackground(s19_2_b10, { colorHex: '#FAF8F5', selectedPages: [0] });
+    const s19_2_d10Out = await PDFDocument.load(s19_2_r10.data);
+    const s19_2_p10_1_annots = s19_2_d10Out.getPage(0).node.get(PDFName.of('Annots')) as PDFArray;
+    const s19_2_p10_2_annots = s19_2_d10Out.getPage(1).node.get(PDFName.of('Annots')) as PDFArray;
+    const t10_pass = s19_2_r10.coloredPagesCount === 1 && s19_2_p10_1_annots?.size() === 1 && s19_2_p10_2_annots?.size() === 1;
+
+    assert(t10_pass, 'Sprint 19.2: Test 10 (Mixed Target/Non-target)', 'Target page receives background while non-target page remains pristine with annotations.');
+
+    // Test 11: Text Searchability Preservation
+    const s19_2_d11 = await PDFDocument.create();
+    s19_2_d11.addPage([500, 700]).drawText('PreservedSearchableTextKey987', { x: 50, y: 500, size: 16 });
+    const s19_2_b11 = await s19_2_d11.save();
+    const s19_2_r11 = await executeAddPageBackground(s19_2_b11, { colorHex: '#FAF8F5', opacity: 0.8 });
+    const s19_2_pdf11 = await pdfjsLib.getDocument({ data: s19_2_r11.data }).promise;
+    const s19_2_p11 = await s19_2_pdf11.getPage(1);
+    const s19_2_tc11 = await s19_2_p11.getTextContent();
+    const s19_2_text11 = s19_2_tc11.items.map((i: any) => i.str).join(' ');
+    const t11_pass = s19_2_text11.includes('PreservedSearchableTextKey987');
+
+    assert(t11_pass, 'Sprint 19.2: Test 11 (Text Searchability)', 'Original text remains 100% extractable and searchable above underlay.');
+
+    // Test 12: Harmonized Local Date Semantics
+    const s19_2_testDate = new Date();
+    const s19_2_expectedIso = formatLocalIsoDate(s19_2_testDate);
+
+    const s19_2_hfRes = await executeAddHeaderFooter(s19_2_b11, { headerCenter: 'Date: {date}' });
+    const s19_2_pdfHf = await pdfjsLib.getDocument({ data: s19_2_hfRes.data }).promise;
+    const s19_2_tcHf = await (await s19_2_pdfHf.getPage(1)).getTextContent();
+    const s19_2_textHf = s19_2_tcHf.items.map((i: any) => i.str).join(' ');
+
+    const s19_2_dtRes = await executeAddDateTimeStamp(s19_2_b11, {
+      mode: 'current-date',
+      dateFormat: 'YYYY-MM-DD',
+      executionTimestamp: s19_2_testDate,
+    });
+    const t12_pass = s19_2_textHf.includes(s19_2_expectedIso) && s19_2_dtRes.stampedText.includes(s19_2_expectedIso);
+
+    assert(t12_pass, 'Sprint 19.2: Test 12 (Date Semantics)', 'Header & Footer {date} and Date & Time Stamp both produce identical local calendar date.');
+  } catch (e: any) {
+    assert(false, 'Sprint 19.2 Structural Preservation Verification', e.message);
   }
 
   console.log('\n--- FINAL TEST SUMMARY ---');

@@ -105,6 +105,18 @@ export function calculateTextCoordinates(
   return { x, y };
 }
 
+/**
+ * Formats a Date object to local calendar ISO date string 'YYYY-MM-DD'.
+ * Uses local calendar date methods (getFullYear, getMonth, getDate)
+ * to ensure consistency across Header & Footer, Date & Time Stamp, and previews.
+ */
+export function formatLocalIsoDate(date: Date = new Date()): string {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export interface DynamicTokenContext {
   page: number; // 1-based current page
   total: number; // total document pages

@@ -27,7 +27,7 @@ import { WatermarkPosition } from '../../pdf/core/operations/watermarkOperation'
 import { parsePageRange } from '../../pdf/core/operations/rangeParser';
 import { PredefinedStampType } from '../../pdf/core/operations/stampOperation';
 import { BatesPosition, formatBatesNumber } from '../../pdf/core/operations/batesNumberOperation';
-import { StandardTextPosition, SupportedFontFamily, expandDynamicTokens } from '../../pdf/core/operations/textPrimitive';
+import { StandardTextPosition, SupportedFontFamily, expandDynamicTokens, formatLocalIsoDate } from '../../pdf/core/operations/textPrimitive';
 import { DateFormat, TimeFormat, StampMode, buildStampText } from '../../pdf/core/operations/dateTimeStampOperation';
 
 export type EditSubTool =
@@ -102,7 +102,7 @@ export const EditTab: React.FC<EditTabProps> = ({
   const [dtMode, setDtMode] = useState<StampMode>('current-date-time');
   const [dtDateFormat, setDtDateFormat] = useState<DateFormat>('YYYY-MM-DD');
   const [dtTimeFormat, setDtTimeFormat] = useState<TimeFormat>('24_MIN');
-  const [dtCustomDate, setDtCustomDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [dtCustomDate, setDtCustomDate] = useState<string>(() => formatLocalIsoDate());
   const [dtCustomTime, setDtCustomTime] = useState<string>('12:00');
   const [dtPrefix, setDtPrefix] = useState<string>('Stamped: ');
   const [dtSuffix, setDtSuffix] = useState<string>('');
@@ -1357,13 +1357,13 @@ export const EditTab: React.FC<EditTabProps> = ({
                 {enableHeader ? (
                   <div className="flex justify-between items-start text-[8px] font-sans text-stone-700 border-b border-stone-100 pb-1 w-full gap-1">
                     <span className="truncate max-w-[30%] text-left font-medium">
-                      {expandDynamicTokens(headerLeft, { page: 1, total: document.pageCount, date: new Date().toISOString().split('T')[0] })}
+                      {expandDynamicTokens(headerLeft, { page: 1, total: document.pageCount, date: formatLocalIsoDate() })}
                     </span>
                     <span className="truncate max-w-[40%] text-center font-bold">
-                      {expandDynamicTokens(headerCenter, { page: 1, total: document.pageCount, date: new Date().toISOString().split('T')[0] })}
+                      {expandDynamicTokens(headerCenter, { page: 1, total: document.pageCount, date: formatLocalIsoDate() })}
                     </span>
                     <span className="truncate max-w-[30%] text-right font-medium">
-                      {expandDynamicTokens(headerRight, { page: 1, total: document.pageCount, date: new Date().toISOString().split('T')[0] })}
+                      {expandDynamicTokens(headerRight, { page: 1, total: document.pageCount, date: formatLocalIsoDate() })}
                     </span>
                   </div>
                 ) : (
@@ -1383,13 +1383,13 @@ export const EditTab: React.FC<EditTabProps> = ({
                 {enableFooter ? (
                   <div className="flex justify-between items-end text-[8px] font-sans text-stone-700 border-t border-stone-100 pt-1 w-full gap-1">
                     <span className="truncate max-w-[30%] text-left font-medium">
-                      {expandDynamicTokens(footerLeft, { page: 1, total: document.pageCount, date: new Date().toISOString().split('T')[0] })}
+                      {expandDynamicTokens(footerLeft, { page: 1, total: document.pageCount, date: formatLocalIsoDate() })}
                     </span>
                     <span className="truncate max-w-[40%] text-center font-bold">
-                      {expandDynamicTokens(footerCenter, { page: 1, total: document.pageCount, date: new Date().toISOString().split('T')[0] })}
+                      {expandDynamicTokens(footerCenter, { page: 1, total: document.pageCount, date: formatLocalIsoDate() })}
                     </span>
                     <span className="truncate max-w-[30%] text-right font-medium">
-                      {expandDynamicTokens(footerRight, { page: 1, total: document.pageCount, date: new Date().toISOString().split('T')[0] })}
+                      {expandDynamicTokens(footerRight, { page: 1, total: document.pageCount, date: formatLocalIsoDate() })}
                     </span>
                   </div>
                 ) : (
