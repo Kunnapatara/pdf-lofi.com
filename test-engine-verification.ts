@@ -12,6 +12,7 @@ import {
   StandardFonts,
   PDFRawStream,
   PDFName,
+  PDFHexString,
 } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 
@@ -65,6 +66,14 @@ import {
   executeCollateDocument,
   executeAlternateAssembly,
   executeSplitEveryNPdf,
+  executeSetPageLabels,
+  executeRemovePageLabels,
+  getLabelForPageIndex,
+  generatePageLabelsPreview,
+  inspectPdfBookmarks,
+  executeSplitByBookmark,
+  executeAddBatesNumbering,
+  formatBatesNumber,
 } from './src/pdf/core/operations';
 import { embedOcrTextLayer, PageOcrOutput } from './src/pdf/engines/ocrEngine';
 
@@ -3257,6 +3266,239 @@ async function runAllTests() {
     );
   } catch (e: any) {
     assert(false, 'Sprint 17 Organize & Imposition Expansion', e.message);
+  }
+
+  // ==========================================
+  // SPRINT 18: EXPANSION VERIFICATION
+  // Page Labels, Split by Bookmark, Bates Numbering
+  // ==========================================
+  try {
+    console.log('\n--- SPRINT 18: EXPANSION VERIFICATION ---');
+
+    const createDocOfPages = async (count: number) => {
+      const d = await PDFDocument.create();
+      for (let i = 1; i <= count; i++) {
+        d.addPage([595.28, 841.89]).drawText(`Page ${i}`);
+      }
+      return d.save();
+    };
+
+    // 1. Tool 1: Page Labels (Semantic /PageLabels Catalog Structure)
+    const docLabelsBytes = await createDocOfPages(6);
+
+    const labelRanges = [
+      { startPageIndex: 0, style: 'roman-lower' as const, prefix: 'Intro-', startNumber: 1 },
+      { startPageIndex: 2, style: 'decimal' as const, prefix: 'Sec-', startNumber: 1 },
+      { startPageIndex: 5, style: 'alpha-upper' as const, prefix: 'App-', startNumber: 1 },
+    ];
+
+    const labelsResult = await executeSetPageLabels(docLabelsBytes, { ranges: labelRanges });
+    const parsedLabelsDoc = await PDFDocument.load(labelsResult.data);
+
+    // Verify /PageLabels dictionary in catalog
+    const catalog = parsedLabelsDoc.catalog;
+    const hasPageLabels = catalog.has(PDFName.of('PageLabels'));
+    const pageLabelsDict = catalog.get(PDFName.of('PageLabels')) as any;
+    const numsArray = pageLabelsDict?.get(PDFName.of('Nums'));
+
+    // Verify preview generator matches expected logical labels
+    const preview = generatePageLabelsPreview(labelRanges, 6);
+    const expectedPreview = ['Intro-i', 'Intro-ii', 'Sec-1', 'Sec-2', 'Sec-3', 'App-A'];
+    const previewMatches = preview.every((lbl, idx) => lbl === expectedPreview[idx]);
+
+    // Verify removal of page labels
+    const removedResult = await executeRemovePageLabels(labelsResult.data);
+    const parsedRemoved = await PDFDocument.load(removedResult.data);
+    const hasRemovedLabels = parsedRemoved.catalog.has(PDFName.of('PageLabels'));
+
+    const pageLabelsPass =
+      hasPageLabels &&
+      labelsResult.appliedRangesCount === 3 &&
+      numsArray !== undefined &&
+      previewMatches &&
+      !hasRemovedLabels &&
+      removedResult.pageCount === 6;
+
+    assert(
+      pageLabelsPass,
+      'Sprint 18: Page Labels (Catalog Number Tree)',
+      'Verified semantic /PageLabels ISO 32000-1 number tree injection, multi-range Roman/Decimal/Alpha styles, preview generator, and catalog removal.'
+    );
+
+    // 2. Tool 2: Split by Bookmark (Outline Inspection & Extraction)
+    const createDocWithBookmarks = async () => {
+      const doc = await PDFDocument.create();
+      const pages = [
+        doc.addPage([595, 842]), // 0: Preamble
+        doc.addPage([595, 842]), // 1: Chapter 1
+        doc.addPage([595, 842]), // 2: Chapter 1 cont
+        doc.addPage([595, 842]), // 3: Chapter 2
+        doc.addPage([595, 842]), // 4: Chapter 2 cont
+        doc.addPage([595, 842]), // 5: Appendix
+      ];
+
+      pages[0].drawText('PREAMBLE_DATA', { x: 50, y: 700 });
+      pages[1].drawText('CHAPTER_1_DATA', { x: 50, y: 700 });
+      pages[2].drawText('CHAPTER_1_P2_DATA', { x: 50, y: 700 });
+      pages[3].drawText('CHAPTER_2_DATA', { x: 50, y: 700 });
+      pages[4].drawText('CHAPTER_2_P2_DATA', { x: 50, y: 700 });
+      pages[5].drawText('APPENDIX_DATA', { x: 50, y: 700 });
+
+      const ctx = doc.context;
+      const outlineRoot = ctx.obj({
+        Type: 'Outlines',
+        Count: 3,
+      });
+      const rootRef = ctx.register(outlineRoot);
+
+      const bm1Ref = ctx.nextRef();
+      const bm2Ref = ctx.nextRef();
+      const bm3Ref = ctx.nextRef();
+
+      // Bookmark 1: Chapter 1 -> Page 1
+      const bm1 = ctx.obj({
+        Title: PDFHexString.fromText('Chapter 1'),
+        Parent: rootRef,
+        Next: bm2Ref,
+        Dest: [pages[1].ref, 'XYZ', null, null, null],
+      });
+      ctx.assign(bm1Ref, bm1);
+
+      // Bookmark 2: Chapter 2 -> Page 3
+      const bm2 = ctx.obj({
+        Title: PDFHexString.fromText('Chapter 2'),
+        Parent: rootRef,
+        Prev: bm1Ref,
+        Next: bm3Ref,
+        Dest: [pages[3].ref, 'XYZ', null, null, null],
+      });
+      ctx.assign(bm2Ref, bm2);
+
+      // Bookmark 3: Appendix -> Page 5
+      const bm3 = ctx.obj({
+        Title: PDFHexString.fromText('Appendix'),
+        Parent: rootRef,
+        Prev: bm2Ref,
+        Dest: [pages[5].ref, 'XYZ', null, null, null],
+      });
+      ctx.assign(bm3Ref, bm3);
+
+      outlineRoot.set(PDFName.of('First'), bm1Ref);
+      outlineRoot.set(PDFName.of('Last'), bm3Ref);
+      doc.catalog.set(PDFName.of('Outlines'), rootRef);
+
+      return doc.save();
+    };
+
+    const bookmarkedDoc = await createDocWithBookmarks();
+
+    // Inspect bookmarks
+    const bmInspect = await inspectPdfBookmarks(bookmarkedDoc, 'top-level');
+    const bmInspectPass =
+      bmInspect.hasBookmarks === true &&
+      bmInspect.totalBookmarks === 3 &&
+      bmInspect.resolvedCount === 3 &&
+      bmInspect.suggestedRanges.length === 4; // 1 Preamble + 3 Chapters
+
+    // Split by bookmarks
+    const bmSplitRes = await executeSplitByBookmark(bookmarkedDoc, { splitLevel: 'top-level' });
+
+    // Verify split contents
+    const p1Text = await extractPageText(bmSplitRes.splits[0].data, 1); // Preamble (p1)
+    const chap1_p1Text = await extractPageText(bmSplitRes.splits[1].data, 1); // Chap 1 p1
+    const chap1_p2Text = await extractPageText(bmSplitRes.splits[1].data, 2); // Chap 1 p2
+    const chap2_p1Text = await extractPageText(bmSplitRes.splits[2].data, 1); // Chap 2 p1
+    const appText = await extractPageText(bmSplitRes.splits[3].data, 1); // Appendix
+
+    const bmSplitPass =
+      bmSplitRes.totalParts === 4 &&
+      bmSplitRes.splits[0].pageCount === 1 &&
+      bmSplitRes.splits[1].pageCount === 2 &&
+      bmSplitRes.splits[2].pageCount === 2 &&
+      bmSplitRes.splits[3].pageCount === 1 &&
+      p1Text.includes('PREAMBLE_DATA') &&
+      chap1_p1Text.includes('CHAPTER_1_DATA') &&
+      chap1_p2Text.includes('CHAPTER_1_P2_DATA') &&
+      chap2_p1Text.includes('CHAPTER_2_DATA') &&
+      appText.includes('APPENDIX_DATA');
+
+    // Document without bookmarks fallback
+    const noBmDoc = await createDocOfPages(2);
+    const noBmInspect = await inspectPdfBookmarks(noBmDoc);
+    const noBmPass = noBmInspect.hasBookmarks === false && noBmInspect.suggestedRanges.length === 0;
+
+    assert(
+      bmInspectPass && bmSplitPass && noBmPass,
+      'Sprint 18: Split by Bookmark',
+      'Verified PDF outline traversal, destination page resolution, front-matter preamble cut, multi-page chapter extraction, and text identity preservation.'
+    );
+
+    // 3. Tool 3: Bates Numbering (Visual Sequential Overlay)
+    const batesSourceDoc = await createLabeledFixture([
+      'LEGAL_BRIEF_PAGE_1',
+      'LEGAL_BRIEF_PAGE_2',
+      'LEGAL_BRIEF_PAGE_3',
+      'LEGAL_BRIEF_PAGE_4',
+    ]);
+
+    // Format helper tests
+    const formattedA = formatBatesNumber(1, 'CONF-', 6, '-A');
+    const formattedB = formatBatesNumber(42, 'CASE-2026-', 5);
+    const formattingPass = formattedA === 'CONF-000001-A' && formattedB === 'CASE-2026-00042';
+
+    // Apply Bates Numbering to all pages
+    const batesResAll = await executeAddBatesNumbering(batesSourceDoc, {
+      prefix: 'EXHIBIT-',
+      startNumber: 1,
+      padding: 6,
+      suffix: '-CONF',
+      position: 'bottom-right',
+      fontFamily: 'Courier',
+      fontSize: 10,
+    });
+
+    const batesP1Text = await extractPageText(batesResAll.data, 1);
+    const batesP2Text = await extractPageText(batesResAll.data, 2);
+    const batesP4Text = await extractPageText(batesResAll.data, 4);
+
+    const batesAllPass =
+      batesResAll.numberedPagesCount === 4 &&
+      batesResAll.firstBatesLabel === 'EXHIBIT-000001-CONF' &&
+      batesResAll.lastBatesLabel === 'EXHIBIT-000004-CONF' &&
+      batesP1Text.includes('LEGAL_BRIEF_PAGE_1') &&
+      batesP1Text.includes('EXHIBIT-000001-CONF') &&
+      batesP2Text.includes('LEGAL_BRIEF_PAGE_2') &&
+      batesP2Text.includes('EXHIBIT-000002-CONF') &&
+      batesP4Text.includes('LEGAL_BRIEF_PAGE_4') &&
+      batesP4Text.includes('EXHIBIT-000004-CONF');
+
+    // Selective page numbering (only pages 0 and 2: pages 1 and 3)
+    const batesResSelective = await executeAddBatesNumbering(batesSourceDoc, {
+      prefix: 'PAGE-',
+      startNumber: 10,
+      padding: 3,
+      selectedPages: [0, 2],
+    });
+
+    const selP1Text = await extractPageText(batesResSelective.data, 1);
+    const selP2Text = await extractPageText(batesResSelective.data, 2);
+    const selP3Text = await extractPageText(batesResSelective.data, 3);
+
+    const batesSelectivePass =
+      batesResSelective.numberedPagesCount === 2 &&
+      batesResSelective.firstBatesLabel === 'PAGE-010' &&
+      batesResSelective.lastBatesLabel === 'PAGE-011' &&
+      selP1Text.includes('PAGE-010') &&
+      !selP2Text.includes('PAGE-') &&
+      selP3Text.includes('PAGE-011');
+
+    assert(
+      formattingPass && batesAllPass && batesSelectivePass,
+      'Sprint 18: Bates Numbering',
+      'Verified sequential Bates formatting, zero-padding, prefix/suffix concatenation, vector text overlay, selective page targeting, and text extraction retention.'
+    );
+  } catch (e: any) {
+    assert(false, 'Sprint 18 Expansion Verification', e.message);
   }
 
   console.log('\n--- FINAL TEST SUMMARY ---');

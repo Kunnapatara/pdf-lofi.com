@@ -23,6 +23,8 @@ import {
   Upload,
   BookOpen,
   CheckCircle2,
+  Bookmark,
+  Hash,
 } from 'lucide-react';
 import { LocalDocument, DocumentPageInfo } from '../../types/pdf';
 import { generatePageThumbnail } from '../../pdf/rendering/thumbnailService';
@@ -33,6 +35,15 @@ import { CropMargins } from '../../pdf/core/operations/cropOperation';
 import { StandardPageSize } from '../../pdf/core/operations/resizeOperation';
 import { NUpLayout } from '../../pdf/core/operations/nUpOperation';
 import { SplitPart } from '../../pdf/core/operations/splitEveryNOperation';
+import {
+  PageLabelRange,
+  PageLabelStyle,
+  generatePageLabelsPreview,
+} from '../../pdf/core/operations/pageLabelsOperation';
+import {
+  InspectBookmarksResult,
+  SplitBookmarkPart,
+} from '../../pdf/core/operations/bookmarkSplitOperation';
 
 interface OrganizeTabProps {
   document: LocalDocument;
@@ -85,6 +96,19 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
   const [splitRange, setSplitRange] = useState<string>('');
   const [splitPrefix, setSplitPrefix] = useState<string>('');
   const [splitResults, setSplitResults] = useState<SplitPart[] | null>(null);
+
+  // Modals for Page Labels & Split by Bookmark (Sprint 18)
+  const [showPageLabelsModal, setShowPageLabelsModal] = useState(false);
+  const [labelRanges, setLabelRanges] = useState<PageLabelRange[]>([
+    { startPageIndex: 0, style: 'decimal', prefix: '', startNumber: 1 },
+  ]);
+
+  const [showBookmarkSplitModal, setShowBookmarkSplitModal] = useState(false);
+  const [bookmarkInspection, setBookmarkInspection] = useState<InspectBookmarksResult | null>(null);
+  const [isInspectingBookmarks, setIsInspectingBookmarks] = useState(false);
+  const [selectedBookmarkRanges, setSelectedBookmarkRanges] = useState<string[]>([]);
+  const [bookmarkSplitLevel, setBookmarkSplitLevel] = useState<'top-level' | 'all'>('top-level');
+  const [bookmarkSplits, setBookmarkSplits] = useState<SplitBookmarkPart[] | null>(null);
 
   // Initialize page metadata array
   useEffect(() => {
@@ -527,6 +551,93 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
     }
   };
 
+  // Apply Page Labels
+  const handleApplyPageLabels = async () => {
+    if (!document.data) return;
+    setIsProcessing(true);
+    setProcessingMsg('Applying semantic page labels...');
+    setErrorMsg(null);
+
+    try {
+      const updated = await documentService.setPageLabels(document, labelRanges);
+      if (updated.data) {
+        await onUpdateDocumentData(updated.data, updated.pageCount, 'Set Page Labels');
+        setSuccessNotice(`Page labels applied across ${updated.pageCount} pages!`);
+        setShowPageLabelsModal(false);
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to apply page labels');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleRemovePageLabels = async () => {
+    if (!document.data) return;
+    setIsProcessing(true);
+    setProcessingMsg('Removing semantic page labels...');
+    setErrorMsg(null);
+
+    try {
+      const updated = await documentService.removePageLabels(document);
+      if (updated.data) {
+        await onUpdateDocumentData(updated.data, updated.pageCount, 'Remove Page Labels');
+        setSuccessNotice('Page labels removed from document catalog.');
+        setShowPageLabelsModal(false);
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to remove page labels');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Inspect & Split by Bookmark
+  const handleInspectBookmarks = async (level: 'top-level' | 'all' = bookmarkSplitLevel) => {
+    if (!document.data) return;
+    setIsInspectingBookmarks(true);
+    setErrorMsg(null);
+    try {
+      const res = await documentService.inspectBookmarks(document, level);
+      setBookmarkInspection(res);
+      setSelectedBookmarkRanges(res.suggestedRanges.map((r) => r.id));
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to read bookmarks');
+    } finally {
+      setIsInspectingBookmarks(false);
+    }
+  };
+
+  const handleOpenBookmarkSplitModal = () => {
+    setBookmarkSplits(null);
+    setShowBookmarkSplitModal(true);
+    handleInspectBookmarks(bookmarkSplitLevel);
+  };
+
+  const handleApplySplitByBookmark = async () => {
+    if (!document.data) return;
+    if (selectedBookmarkRanges.length === 0) {
+      setErrorMsg('Please select at least one bookmark section to split.');
+      return;
+    }
+    setIsProcessing(true);
+    setProcessingMsg('Splitting document by bookmarks...');
+    setErrorMsg(null);
+
+    try {
+      const res = await documentService.splitByBookmark(document, {
+        selectedRangeIds: selectedBookmarkRanges,
+        splitLevel: bookmarkSplitLevel,
+      });
+      setBookmarkSplits(res.splits);
+      setSuccessNotice(`Successfully split document into ${res.totalParts} bookmark chapters!`);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Split by Bookmark failed');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleDownloadCurrent = () => {
     if (document.data) {
       triggerLocalDownload(document.data, document.name);
@@ -684,6 +795,28 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
             >
               <Scissors className="w-3.5 h-3.5 text-stone-600" />
               <span>Split Every N</span>
+            </button>
+
+            <button
+              onClick={() => setShowPageLabelsModal(true)}
+              disabled={isProcessing}
+              id="btn-page-labels"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all cursor-pointer"
+              title="Configure semantic page labels and numbering scheme"
+            >
+              <Hash className="w-3.5 h-3.5 text-stone-600" />
+              <span>Page Labels</span>
+            </button>
+
+            <button
+              onClick={handleOpenBookmarkSplitModal}
+              disabled={isProcessing}
+              id="btn-split-by-bookmark"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all cursor-pointer"
+              title="Split document into separate files by bookmark and outline"
+            >
+              <Bookmark className="w-3.5 h-3.5 text-stone-600" />
+              <span>Split by Bookmark</span>
             </button>
           </div>
 
@@ -1563,6 +1696,433 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
                     onClick={() => {
                       setShowSplitEveryNModal(false);
                       setSplitResults(null);
+                    }}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-stone-800 hover:bg-stone-900 text-white cursor-pointer"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* SPRINT 18 MODAL: PAGE LABELS */}
+      {showPageLabelsModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-stone-200 shadow-2xl w-full max-w-xl p-6 space-y-5 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-orange-50 text-orange-600">
+                  <Hash className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-stone-900">Semantic Page Labels</h3>
+                  <p className="text-xs text-stone-500">
+                    Define PDF /PageLabels catalog numbering for logical navigation
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPageLabelsModal(false)}
+                className="p-1.5 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Truth Boundary Callout */}
+            <div className="p-3 bg-amber-50/80 border border-amber-200/70 rounded-2xl text-[11px] text-amber-900 leading-relaxed">
+              <span className="font-bold">Specification Notice: </span>
+              Adds semantic PDF page labels used by compatible PDF viewers for logical page navigation and display. Does not draw visual text or alter rendered page streams.
+            </div>
+
+            {/* Ranges Configuration */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-stone-800">Labeling Ranges</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextStart = Math.min(document.pageCount, (labelRanges[labelRanges.length - 1]?.startPageIndex || 0) + 2);
+                    setLabelRanges([
+                      ...labelRanges,
+                      { startPageIndex: nextStart - 1, style: 'decimal', prefix: '', startNumber: 1 },
+                    ]);
+                  }}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Range</span>
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {labelRanges.map((range, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3.5 bg-stone-50 border border-stone-200 rounded-2xl space-y-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-stone-700">
+                        Section {idx + 1}
+                      </span>
+                      {labelRanges.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setLabelRanges(labelRanges.filter((_, i) => i !== idx))}
+                          className="text-stone-400 hover:text-red-600 text-xs transition-colors cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 text-xs">
+                      <div>
+                        <label className="font-semibold text-stone-600 block mb-1">Start Page</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={document.pageCount}
+                          value={range.startPageIndex + 1}
+                          onChange={(e) => {
+                            const val = Math.max(1, Math.min(document.pageCount, parseInt(e.target.value) || 1));
+                            const updated = [...labelRanges];
+                            updated[idx] = { ...updated[idx], startPageIndex: val - 1 };
+                            setLabelRanges(updated);
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-stone-300 bg-white font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-semibold text-stone-600 block mb-1">Style</label>
+                        <select
+                          value={range.style || 'decimal'}
+                          onChange={(e) => {
+                            const updated = [...labelRanges];
+                            updated[idx] = { ...updated[idx], style: e.target.value as PageLabelStyle };
+                            setLabelRanges(updated);
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-stone-300 bg-white"
+                        >
+                          <option value="decimal">1, 2, 3 (Decimal)</option>
+                          <option value="roman-lower">i, ii, iii (Roman Lower)</option>
+                          <option value="roman-upper">I, II, III (Roman Upper)</option>
+                          <option value="alpha-lower">a, b, c (Alpha Lower)</option>
+                          <option value="alpha-upper">A, B, C (Alpha Upper)</option>
+                          <option value="none">None (Prefix only)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="font-semibold text-stone-600 block mb-1">Prefix</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. A-, App-"
+                          value={range.prefix || ''}
+                          onChange={(e) => {
+                            const updated = [...labelRanges];
+                            updated[idx] = { ...updated[idx], prefix: e.target.value };
+                            setLabelRanges(updated);
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-stone-300 bg-white font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-semibold text-stone-600 block mb-1">Start No.</label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={range.startNumber ?? 1}
+                          onChange={(e) => {
+                            const val = Math.max(1, parseInt(e.target.value) || 1);
+                            const updated = [...labelRanges];
+                            updated[idx] = { ...updated[idx], startNumber: val };
+                            setLabelRanges(updated);
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-stone-300 bg-white font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Live Preview */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-stone-700">Preview (First 8 Pages)</label>
+              <div className="p-3 bg-stone-100/80 rounded-2xl flex flex-wrap gap-2 text-xs font-mono">
+                {generatePageLabelsPreview(labelRanges, Math.min(8, document.pageCount)).map((lbl, i) => (
+                  <div key={i} className="px-2.5 py-1 bg-white rounded-lg border border-stone-200 shadow-2xs">
+                    <span className="text-stone-400 mr-1.5">p.{i + 1} →</span>
+                    <span className="font-bold text-stone-900">{lbl || '(blank)'}</span>
+                  </div>
+                ))}
+                {document.pageCount > 8 && (
+                  <div className="px-2.5 py-1 text-stone-400 self-center">
+                    +{document.pageCount - 8} more
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-between pt-3 border-t border-stone-100">
+              <button
+                type="button"
+                onClick={handleRemovePageLabels}
+                disabled={isProcessing}
+                className="text-xs font-semibold text-red-600 hover:text-red-700 cursor-pointer"
+              >
+                Clear Page Labels
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPageLabelsModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyPageLabels}
+                  disabled={isProcessing}
+                  id="btn-apply-page-labels"
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white shadow-xs shadow-orange-500/20 active:scale-95 transition-all cursor-pointer"
+                >
+                  Apply Page Labels
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SPRINT 18 MODAL: SPLIT BY BOOKMARK */}
+      {showBookmarkSplitModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-stone-200 shadow-2xl w-full max-w-xl p-6 space-y-5 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-orange-50 text-orange-600">
+                  <Bookmark className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-stone-900">Split by Bookmark</h3>
+                  <p className="text-xs text-stone-500">
+                    Extract document sections using existing outline bookmarks
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowBookmarkSplitModal(false);
+                  setBookmarkSplits(null);
+                }}
+                className="p-1.5 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Truth Boundary Callout */}
+            <div className="p-3 bg-amber-50/80 border border-amber-200/70 rounded-2xl text-[11px] text-amber-900 leading-relaxed">
+              <span className="font-bold">Specification Notice: </span>
+              Splits a PDF into separate files based on its bookmarks and outline structure. Local browser processing only.
+            </div>
+
+            {/* Inspecting state */}
+            {isInspectingBookmarks && (
+              <div className="py-12 text-center space-y-3">
+                <div className="w-8 h-8 border-3 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                <p className="text-xs font-semibold text-stone-600">Scanning document outline bookmarks...</p>
+              </div>
+            )}
+
+            {/* Not inspecting & No Bookmarks found */}
+            {!isInspectingBookmarks && bookmarkInspection && !bookmarkInspection.hasBookmarks && (
+              <div className="py-8 text-center space-y-3 bg-stone-50 rounded-2xl border border-stone-200 p-6">
+                <div className="w-10 h-10 rounded-full bg-stone-200/70 flex items-center justify-center mx-auto text-stone-500">
+                  <Bookmark className="w-5 h-5" />
+                </div>
+                <h4 className="text-sm font-bold text-stone-800">No Bookmarks Found</h4>
+                <p className="text-xs text-stone-500 max-w-sm mx-auto leading-relaxed">
+                  This PDF does not contain digital bookmarks or an embedded outline. You can split by page intervals with <strong>Split Every N Pages</strong> or extract custom ranges using <strong>Split PDF</strong>.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowBookmarkSplitModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-stone-200 text-stone-800 hover:bg-stone-300 transition-all cursor-pointer mt-2"
+                >
+                  Close
+                </button>
+              </div>
+            )}
+
+            {/* Bookmarks Found - Selection Mode */}
+            {!isInspectingBookmarks && bookmarkInspection && bookmarkInspection.hasBookmarks && !bookmarkSplits && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-stone-700">Outline Level:</span>
+                    <select
+                      value={bookmarkSplitLevel}
+                      onChange={(e) => {
+                        const lvl = e.target.value as 'top-level' | 'all';
+                        setBookmarkSplitLevel(lvl);
+                        handleInspectBookmarks(lvl);
+                      }}
+                      className="px-2.5 py-1 rounded-lg border border-stone-300 bg-white text-xs"
+                    >
+                      <option value="top-level">Top-Level Chapters Only</option>
+                      <option value="all">All Outline Levels</option>
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedBookmarkRanges.length === bookmarkInspection.suggestedRanges.length) {
+                        setSelectedBookmarkRanges([]);
+                      } else {
+                        setSelectedBookmarkRanges(bookmarkInspection.suggestedRanges.map((r) => r.id));
+                      }
+                    }}
+                    className="text-xs font-semibold text-orange-600 hover:text-orange-700 cursor-pointer"
+                  >
+                    {selectedBookmarkRanges.length === bookmarkInspection.suggestedRanges.length
+                      ? 'Deselect All'
+                      : 'Select All'}
+                  </button>
+                </div>
+
+                <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                  {bookmarkInspection.suggestedRanges.map((range) => {
+                    const isSelected = selectedBookmarkRanges.includes(range.id);
+                    return (
+                      <div
+                        key={range.id}
+                        onClick={() => {
+                          if (isSelected) {
+                            setSelectedBookmarkRanges(selectedBookmarkRanges.filter((id) => id !== range.id));
+                          } else {
+                            setSelectedBookmarkRanges([...selectedBookmarkRanges, range.id]);
+                          }
+                        }}
+                        className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-3 cursor-pointer transition-all ${
+                          isSelected
+                            ? 'bg-orange-50/50 border-orange-300'
+                            : 'bg-stone-50 border-stone-200 opacity-60 hover:opacity-100'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {}}
+                            className="rounded text-orange-600 focus:ring-orange-500 cursor-pointer"
+                          />
+                          <div className="truncate">
+                            <span className="font-bold text-stone-900 block truncate">{range.title}</span>
+                            <span className="text-[11px] text-stone-500">
+                              Pages {range.startPage}–{range.endPage} ({range.pageCount} {range.pageCount === 1 ? 'page' : 'pages'})
+                            </span>
+                          </div>
+                        </div>
+
+                        <span className="text-[10px] font-mono text-stone-400 shrink-0 truncate max-w-[120px]">
+                          {range.outputName}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowBookmarkSplitModal(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleApplySplitByBookmark}
+                    disabled={isProcessing || selectedBookmarkRanges.length === 0}
+                    id="btn-apply-split-by-bookmark"
+                    className="px-5 py-2 rounded-xl text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white shadow-xs shadow-orange-500/20 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Split {selectedBookmarkRanges.length} {selectedBookmarkRanges.length === 1 ? 'Section' : 'Sections'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Bookmarks Split Results */}
+            {bookmarkSplits && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Generated {bookmarkSplits.length} Chapter Files</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      bookmarkSplits.forEach((p) => {
+                        triggerLocalDownload(p.data, p.name);
+                      });
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-orange-500 text-white hover:bg-orange-600 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download All</span>
+                  </button>
+                </div>
+
+                <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                  {bookmarkSplits.map((split, i) => (
+                    <div
+                      key={i}
+                      className="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between gap-2"
+                    >
+                      <div className="truncate">
+                        <div className="font-semibold text-stone-900 truncate" title={split.name}>
+                          {split.name}
+                        </div>
+                        <div className="text-[11px] text-stone-500">
+                          {split.title} • Pages {split.startPage}–{split.endPage} ({split.pageCount} {split.pageCount === 1 ? 'page' : 'pages'})
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => triggerLocalDownload(split.data, split.name)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-white border border-stone-200 text-stone-700 hover:bg-stone-100 cursor-pointer shrink-0"
+                      >
+                        <Download className="w-3 h-3 text-stone-600" />
+                        <span>Save</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+                  <button
+                    onClick={() => setBookmarkSplits(null)}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 cursor-pointer"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowBookmarkSplitModal(false);
+                      setBookmarkSplits(null);
                     }}
                     className="px-4 py-2 rounded-xl text-xs font-bold bg-stone-800 hover:bg-stone-900 text-white cursor-pointer"
                   >

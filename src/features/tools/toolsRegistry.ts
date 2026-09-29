@@ -51,6 +51,8 @@ import {
   Zap,
   FileSpreadsheet,
   BookOpen,
+  Bookmark,
+  Hash,
 } from 'lucide-react';
 import { AppView, ActiveTab } from '../../types/pdf';
 
@@ -283,6 +285,28 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     workspaceTab: 'organize',
     keywords: ['split every n', 'split batch', 'chunk', 'split fixed', 'even split', 'batch split', 'group pages'],
   },
+  {
+    id: 'page-labels',
+    name: 'Page Labels',
+    shortDescription: 'Add semantic page labels such as numbers, Roman numerals, or prefixes for logical PDF navigation.',
+    category: 'organize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'organize',
+    workspaceTab: 'organize',
+    keywords: ['page labels', 'semantic labels', 'roman numerals', 'logical pages', 'pagination', 'prefix', 'catalog', 'navigation'],
+  },
+  {
+    id: 'split-by-bookmark',
+    name: 'Split by Bookmark',
+    shortDescription: 'Split a PDF into separate files using its bookmarks and outline structure.',
+    category: 'organize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'organize',
+    workspaceTab: 'organize',
+    keywords: ['split by bookmark', 'bookmark split', 'outline', 'chapters', 'table of contents', 'toc split', 'bookmarks'],
+  },
 
   // ==========================================
   // 2. EDIT WORKSPACE
@@ -297,6 +321,17 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     routeView: 'page-numbers',
     workspaceTab: 'edit',
     keywords: ['numbers', 'pagination', 'header', 'footer', 'stamp', 'numbering', 'page counter'],
+  },
+  {
+    id: 'bates-numbering',
+    name: 'Bates Numbering',
+    shortDescription: 'Add sequential Bates-style identifiers to selected PDF pages.',
+    category: 'edit',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'edit',
+    workspaceTab: 'edit',
+    keywords: ['bates numbering', 'bates stamp', 'legal numbering', 'prefix', 'sequential number', 'identifier', 'padding', 'indexing'],
   },
   {
     id: 'watermark-pdf',
@@ -921,11 +956,17 @@ export function getToolIcon(id: string, className = 'w-6 h-6'): React.ReactNode 
       return React.createElement(ArrowUpDown, { className });
     case 'split-every-n':
       return React.createElement(Scissors, { className });
+    case 'page-labels':
+      return React.createElement(Hash, { className });
+    case 'split-by-bookmark':
+      return React.createElement(Bookmark, { className });
     case 'page-selection':
       return React.createElement(CheckSquare, { className });
 
     case 'page-numbers':
       return React.createElement(Binary, { className });
+    case 'bates-numbering':
+      return React.createElement(Hash, { className });
     case 'watermark-pdf':
     case 'stamps-pdf':
       return React.createElement(Stamp, { className });

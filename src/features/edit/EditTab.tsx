@@ -23,9 +23,11 @@ import { PageNumberPosition } from '../../pdf/core/operations/pageNumberOperatio
 import { WatermarkPosition } from '../../pdf/core/operations/watermarkOperation';
 import { parsePageRange } from '../../pdf/core/operations/rangeParser';
 import { PredefinedStampType } from '../../pdf/core/operations/stampOperation';
+import { BatesPosition, formatBatesNumber } from '../../pdf/core/operations/batesNumberOperation';
 
 export type EditSubTool =
   | 'page-numbers'
+  | 'bates-numbering'
   | 'watermark'
   | 'stamps'
   | 'signature'
@@ -57,6 +59,18 @@ export const EditTab: React.FC<EditTabProps> = ({
   const [position, setPosition] = useState<PageNumberPosition>('bottom-center');
   const [fontSize, setFontSize] = useState<number>(10);
   const [margin, setMargin] = useState<number>(36);
+
+  // --- Bates Numbering Settings (Sprint 18) ---
+  const [batesPrefix, setBatesPrefix] = useState<string>('BATES-');
+  const [batesStartNumber, setBatesStartNumber] = useState<number>(1);
+  const [batesPadding, setBatesPadding] = useState<number>(6);
+  const [batesSuffix, setBatesSuffix] = useState<string>('');
+  const [batesPosition, setBatesPosition] = useState<BatesPosition>('bottom-right');
+  const [batesFontFamily, setBatesFontFamily] = useState<'Courier' | 'Helvetica'>('Courier');
+  const [batesFontSize, setBatesFontSize] = useState<number>(10);
+  const [batesMargin, setBatesMargin] = useState<number>(36);
+  const [batesScope, setBatesScope] = useState<'all' | 'custom'>('all');
+  const [batesCustomRange, setBatesCustomRange] = useState<string>('1');
 
   // --- Watermark Settings ---
   const [watermarkText, setWatermarkText] = useState<string>('CONFIDENTIAL');
@@ -198,6 +212,49 @@ export const EditTab: React.FC<EditTabProps> = ({
       }
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to apply page numbers');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Apply Bates Numbering (Sprint 18)
+  const handleApplyBatesNumbering = async () => {
+    if (!document.data) return;
+    setIsProcessing(true);
+    setProcessingMsg('Adding sequential Bates numbering...');
+    setErrorMsg(null);
+    setSuccessBanner(null);
+
+    try {
+      let selectedPages: number[] | undefined;
+      if (batesScope === 'custom') {
+        const parsed = parsePageRange(batesCustomRange, document.pageCount);
+        if (!parsed.valid || parsed.pageIndices.length === 0) {
+          setErrorMsg(parsed.error || 'Invalid page range');
+          setIsProcessing(false);
+          return;
+        }
+        selectedPages = parsed.pageIndices;
+      }
+
+      const { document: updated, result } = await documentService.addBatesNumbering(document, {
+        prefix: batesPrefix,
+        startNumber: batesStartNumber,
+        padding: batesPadding,
+        suffix: batesSuffix,
+        position: batesPosition,
+        fontFamily: batesFontFamily,
+        fontSize: batesFontSize,
+        margin: batesMargin,
+        selectedPages,
+      });
+
+      if (updated.data) {
+        await onUpdateDocumentData(updated.data, updated.pageCount, 'Bates Numbering');
+        setSuccessBanner(`Bates numbering applied (${result.firstBatesLabel} – ${result.lastBatesLabel}) across ${result.numberedPagesCount} pages.`);
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to apply Bates numbering');
     } finally {
       setIsProcessing(false);
     }
@@ -421,6 +478,19 @@ export const EditTab: React.FC<EditTabProps> = ({
           </button>
 
           <button
+            onClick={() => setActiveSubTool('bates-numbering')}
+            id="tab-edit-bates-numbering"
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeSubTool === 'bates-numbering'
+                ? 'bg-white text-stone-900 shadow-2xs'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            <Hash className="w-3.5 h-3.5 text-orange-500" />
+            <span>Bates Numbering</span>
+          </button>
+
+          <button
             onClick={() => setActiveSubTool('watermark')}
             id="tab-edit-watermark"
             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
@@ -612,6 +682,198 @@ export const EditTab: React.FC<EditTabProps> = ({
                 </div>
                 <div className="text-[10px] text-center font-mono font-bold text-stone-700">
                   {prefix}{startNumber}{suffix.replace('{total}', String(document.pageCount))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TOOL: BATES NUMBERING (Sprint 18) */}
+      {activeSubTool === 'bates-numbering' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-7 bg-white rounded-3xl border border-stone-200/90 p-6 shadow-xs space-y-4">
+            <div className="border-b border-stone-100 pb-3">
+              <h3 className="text-base font-bold text-stone-900">Bates Numbering</h3>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Add sequential Bates-style identifiers with custom prefix, zero-padding, and position.
+              </p>
+            </div>
+
+            {/* Truth Boundary Callout */}
+            <div className="p-3 bg-amber-50/80 border border-amber-200/70 rounded-2xl text-[11px] text-amber-900 leading-relaxed">
+              <span className="font-bold">Specification Notice: </span>
+              Adds sequential Bates-style identifiers to selected PDF pages as a document-numbering utility. Does not provide tamper-proofing, cryptographic signing, or legal chain-of-custody certification.
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-700 block">Prefix</label>
+                <input
+                  type="text"
+                  placeholder="e.g. BATES-, CASE-, CONF-"
+                  value={batesPrefix}
+                  onChange={(e) => setBatesPrefix(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white font-mono"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-700 block">Suffix (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. -CONF, -CONFIDENTIAL"
+                  value={batesSuffix}
+                  onChange={(e) => setBatesSuffix(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-700 block">Start Number</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={batesStartNumber}
+                  onChange={(e) => setBatesStartNumber(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white font-mono"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-700 block">Zero Padding (Digits)</label>
+                <select
+                  value={batesPadding}
+                  onChange={(e) => setBatesPadding(parseInt(e.target.value, 10) || 6)}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white font-mono"
+                >
+                  <option value="3">3 digits (001)</option>
+                  <option value="4">4 digits (0001)</option>
+                  <option value="5">5 digits (00001)</option>
+                  <option value="6">6 digits (000001)</option>
+                  <option value="8">8 digits (00000001)</option>
+                  <option value="10">10 digits (0000000001)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-700 block">Font Style</label>
+                <select
+                  value={batesFontFamily}
+                  onChange={(e) => setBatesFontFamily(e.target.value as 'Courier' | 'Helvetica')}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white"
+                >
+                  <option value="Courier">Courier (Monospace)</option>
+                  <option value="Helvetica">Helvetica (Sans-Serif)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-700 block">Position</label>
+                <select
+                  value={batesPosition}
+                  onChange={(e) => setBatesPosition(e.target.value as BatesPosition)}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white"
+                >
+                  <option value="bottom-right">Bottom Right (Standard)</option>
+                  <option value="bottom-center">Bottom Center</option>
+                  <option value="bottom-left">Bottom Left</option>
+                  <option value="top-right">Top Right</option>
+                  <option value="top-center">Top Center</option>
+                  <option value="top-left">Top Left</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-700 block">Target Pages</label>
+                <select
+                  value={batesScope}
+                  onChange={(e) => setBatesScope(e.target.value as 'all' | 'custom')}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white"
+                >
+                  <option value="all">All Pages (1–{document.pageCount})</option>
+                  <option value="custom">Custom Page Range</option>
+                </select>
+              </div>
+            </div>
+
+            {batesScope === 'custom' && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-700 block">Custom Range (e.g. 1-5, 8, 11-13)</label>
+                <input
+                  type="text"
+                  value={batesCustomRange}
+                  onChange={(e) => setBatesCustomRange(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white font-mono"
+                  placeholder="e.g. 1-10"
+                />
+              </div>
+            )}
+
+            <div className="pt-4 border-t border-stone-100 flex items-center justify-between">
+              <span className="text-xs text-stone-500">Processed locally in browser.</span>
+              <button
+                onClick={handleApplyBatesNumbering}
+                disabled={isProcessing}
+                id="btn-apply-bates-numbering"
+                className="px-5 py-2.5 rounded-full text-xs font-bold bg-orange-500 text-white hover:bg-orange-600 active:scale-95 transition-all cursor-pointer"
+              >
+                Apply Bates Numbering
+              </button>
+            </div>
+          </div>
+
+          <div className="lg:col-span-5 bg-stone-100 rounded-3xl border border-stone-200/90 p-6 flex flex-col justify-between">
+            <div>
+              <h4 className="text-xs font-bold text-stone-800 uppercase tracking-wider">Stamp Preview</h4>
+              <p className="text-xs text-stone-500 mt-1">Simulated page stamp presentation:</p>
+
+              <div className="mt-6 mx-auto w-52 h-72 bg-white rounded-lg shadow-sm border border-stone-300 relative p-3 flex flex-col justify-between">
+                {/* Header position preview */}
+                <div className="flex justify-between items-start text-[9px] font-mono text-stone-400">
+                  <div className={batesPosition === 'top-left' ? 'font-bold text-orange-600 bg-orange-50 px-1 rounded' : 'opacity-0'}>
+                    {formatBatesNumber(batesStartNumber, batesPrefix, batesPadding, batesSuffix)}
+                  </div>
+                  <div className={batesPosition === 'top-center' ? 'font-bold text-orange-600 bg-orange-50 px-1 rounded' : 'opacity-0'}>
+                    {formatBatesNumber(batesStartNumber, batesPrefix, batesPadding, batesSuffix)}
+                  </div>
+                  <div className={batesPosition === 'top-right' ? 'font-bold text-orange-600 bg-orange-50 px-1 rounded' : 'opacity-0'}>
+                    {formatBatesNumber(batesStartNumber, batesPrefix, batesPadding, batesSuffix)}
+                  </div>
+                </div>
+
+                {/* Dummy page content */}
+                <div className="space-y-2 opacity-25 px-2 my-auto">
+                  <div className="h-2 bg-stone-400 rounded-sm w-3/4"></div>
+                  <div className="h-1.5 bg-stone-300 rounded-sm w-full"></div>
+                  <div className="h-1.5 bg-stone-300 rounded-sm w-5/6"></div>
+                  <div className="h-1.5 bg-stone-300 rounded-sm w-4/5"></div>
+                </div>
+
+                {/* Footer position preview */}
+                <div className="flex justify-between items-end text-[9px] font-mono text-stone-400">
+                  <div className={batesPosition === 'bottom-left' ? 'font-bold text-orange-600 bg-orange-50 px-1 rounded' : 'opacity-0'}>
+                    {formatBatesNumber(batesStartNumber, batesPrefix, batesPadding, batesSuffix)}
+                  </div>
+                  <div className={batesPosition === 'bottom-center' ? 'font-bold text-orange-600 bg-orange-50 px-1 rounded' : 'opacity-0'}>
+                    {formatBatesNumber(batesStartNumber, batesPrefix, batesPadding, batesSuffix)}
+                  </div>
+                  <div className={batesPosition === 'bottom-right' ? 'font-bold text-orange-600 bg-orange-50 px-1 rounded' : 'opacity-0'}>
+                    {formatBatesNumber(batesStartNumber, batesPrefix, batesPadding, batesSuffix)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 p-3 bg-white rounded-xl border border-stone-200 text-center space-y-1">
+                <div className="text-[11px] text-stone-500 font-medium">Bates Sequence:</div>
+                <div className="font-mono text-xs font-bold text-stone-900">
+                  {formatBatesNumber(batesStartNumber, batesPrefix, batesPadding, batesSuffix)}
+                  <span className="text-stone-400 mx-1.5">→</span>
+                  {formatBatesNumber(batesStartNumber + document.pageCount - 1, batesPrefix, batesPadding, batesSuffix)}
                 </div>
               </div>
             </div>

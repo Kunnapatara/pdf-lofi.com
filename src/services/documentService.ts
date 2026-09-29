@@ -52,6 +52,18 @@ import {
   executeSplitEveryNPdf,
   SplitEveryNOptions,
   SplitEveryNResult,
+  executeSetPageLabels,
+  executeRemovePageLabels,
+  PageLabelRange,
+  PageLabelsOptions,
+  inspectPdfBookmarks,
+  executeSplitByBookmark,
+  InspectBookmarksResult,
+  SplitByBookmarkOptions,
+  SplitByBookmarkResult,
+  executeAddBatesNumbering,
+  BatesNumberOptions,
+  BatesNumberResult,
   executeStripJavaScript,
   StripJavaScriptResult,
   executeStripAnnotations,
@@ -407,6 +419,56 @@ export class DocumentService {
       ...options,
       outputPrefix: options.outputPrefix || document.name,
     });
+  }
+
+  async setPageLabels(
+    document: LocalDocument,
+    ranges: PageLabelRange[]
+  ): Promise<LocalDocument> {
+    return this.safeMutate(document, 'setPageLabels', (data) =>
+      executeSetPageLabels(data, { ranges })
+    );
+  }
+
+  async removePageLabels(
+    document: LocalDocument
+  ): Promise<LocalDocument> {
+    return this.safeMutate(document, 'removePageLabels', (data) =>
+      executeRemovePageLabels(data)
+    );
+  }
+
+  async inspectBookmarks(
+    document: LocalDocument,
+    splitLevel: 'top-level' | 'all' = 'top-level'
+  ): Promise<InspectBookmarksResult> {
+    if (!document.data) throw new Error('Document has no binary data');
+    return inspectPdfBookmarks(document.data, splitLevel);
+  }
+
+  async splitByBookmark(
+    document: LocalDocument,
+    options?: SplitByBookmarkOptions
+  ): Promise<SplitByBookmarkResult> {
+    if (!document.data) throw new Error('Document has no binary data');
+    return executeSplitByBookmark(document.data, options);
+  }
+
+  async addBatesNumbering(
+    document: LocalDocument,
+    options: BatesNumberOptions
+  ): Promise<{ document: LocalDocument; result: BatesNumberResult }> {
+    if (!document.data) throw new Error('Document has no binary data');
+    const result = await executeAddBatesNumbering(document.data, options);
+    const updatedDoc: LocalDocument = {
+      ...document,
+      data: result.data,
+      pageCount: result.pageCount,
+      size: result.data.byteLength,
+      processingState: 'completed',
+      updatedAt: Date.now(),
+    };
+    return { document: updatedDoc, result };
   }
 
   async stripJavaScript(

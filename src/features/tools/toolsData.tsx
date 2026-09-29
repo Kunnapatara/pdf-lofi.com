@@ -33,6 +33,8 @@ import {
   GitCompare,
   BookOpen,
   ArrowUpDown,
+  Bookmark,
+  Hash,
 } from 'lucide-react';
 import { ToolItem } from '../../types/pdf';
 
@@ -172,6 +174,30 @@ export const ALL_TOOLS: ToolDefinition[] = [
     icon: <Scissors className="w-8 h-8" />,
   },
   {
+    id: 'page-labels',
+    name: 'Page Labels',
+    category: 'organize',
+    description: 'Add semantic page labels such as numbers, Roman numerals, or prefixes for logical PDF navigation.',
+    badge: 'New',
+    status: 'READY',
+    processingLocation: 'local',
+    viewKey: 'organize',
+    actionKey: 'organize',
+    icon: <Hash className="w-8 h-8" />,
+  },
+  {
+    id: 'split-by-bookmark',
+    name: 'Split by Bookmark',
+    category: 'organize',
+    description: 'Split a PDF into separate files using its bookmarks and outline structure.',
+    badge: 'New',
+    status: 'READY',
+    processingLocation: 'local',
+    viewKey: 'organize',
+    actionKey: 'organize',
+    icon: <Bookmark className="w-8 h-8" />,
+  },
+  {
     id: 'page-numbers',
     name: 'Page Numbers',
     category: 'organize',
@@ -291,6 +317,18 @@ export const ALL_TOOLS: ToolDefinition[] = [
   },
 
   // --- Edit PDF ---
+  {
+    id: 'bates-numbering',
+    name: 'Bates Numbering',
+    category: 'edit',
+    description: 'Add sequential Bates-style identifiers to selected PDF pages.',
+    badge: 'New',
+    status: 'READY',
+    processingLocation: 'local',
+    viewKey: 'edit',
+    actionKey: 'edit',
+    icon: <Hash className="w-8 h-8" />,
+  },
   {
     id: 'edit-pdf',
     name: 'Edit PDF',
