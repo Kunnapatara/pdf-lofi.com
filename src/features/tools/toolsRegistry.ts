@@ -53,6 +53,9 @@ import {
   BookOpen,
   Bookmark,
   Hash,
+  PanelTop,
+  CalendarDays,
+  Palette,
 } from 'lucide-react';
 import { AppView, ActiveTab } from '../../types/pdf';
 
@@ -398,6 +401,39 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     routeView: 'edit',
     workspaceTab: 'edit',
     keywords: ['markup', 'highlight', 'underline', 'box', 'annotate', 'pen', 'visual overlay'],
+  },
+  {
+    id: 'header-footer',
+    name: 'Header & Footer',
+    shortDescription: 'Add customizable headers and footers across page margins with dynamic page and date tokens.',
+    category: 'edit',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'edit',
+    workspaceTab: 'edit',
+    keywords: ['header', 'footer', 'page numbers', 'header and footer', 'running head', 'running foot', 'top margin', 'bottom margin'],
+  },
+  {
+    id: 'date-time-stamp',
+    name: 'Date & Time Stamp',
+    shortDescription: 'Place deterministic date and timestamp text markings onto selected document pages.',
+    category: 'edit',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'edit',
+    workspaceTab: 'edit',
+    keywords: ['date stamp', 'time stamp', 'timestamp', 'date and time', 'audit stamp', 'received date', 'clock'],
+  },
+  {
+    id: 'page-background',
+    name: 'Page Background',
+    shortDescription: 'Add a solid color underlay behind existing PDF page content with opacity control without rasterization.',
+    category: 'edit',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'edit',
+    workspaceTab: 'edit',
+    keywords: ['background', 'page background', 'underlay', 'tint', 'paper color', 'background color', 'color layer'],
   },
 
   // ==========================================
@@ -967,6 +1003,12 @@ export function getToolIcon(id: string, className = 'w-6 h-6'): React.ReactNode 
       return React.createElement(Binary, { className });
     case 'bates-numbering':
       return React.createElement(Hash, { className });
+    case 'header-footer':
+      return React.createElement(PanelTop, { className });
+    case 'date-time-stamp':
+      return React.createElement(CalendarDays, { className });
+    case 'page-background':
+      return React.createElement(Palette, { className });
     case 'watermark-pdf':
     case 'stamps-pdf':
       return React.createElement(Stamp, { className });

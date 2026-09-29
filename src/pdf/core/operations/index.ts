@@ -36,3 +36,7 @@ export * from './batesNumberOperation';
 export * from './stripJavaScriptOperation';
 export * from './stripAnnotationsOperation';
 export * from './exportFormOperation';
+export * from './textPrimitive';
+export * from './headerFooterOperation';
+export * from './dateTimeStampOperation';
+export * from './pageBackgroundOperation';

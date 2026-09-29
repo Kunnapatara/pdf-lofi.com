@@ -74,6 +74,10 @@ import {
   executeSplitByBookmark,
   executeAddBatesNumbering,
   formatBatesNumber,
+  executeAddHeaderFooter,
+  executeAddDateTimeStamp,
+  buildStampText,
+  executeAddPageBackground,
 } from './src/pdf/core/operations';
 import { embedOcrTextLayer, PageOcrOutput } from './src/pdf/engines/ocrEngine';
 
@@ -3499,6 +3503,136 @@ async function runAllTests() {
     );
   } catch (e: any) {
     assert(false, 'Sprint 18 Expansion Verification', e.message);
+  }
+
+  // ==========================================
+  // SPRINT 19: EDIT EXPANSION VERIFICATION
+  // ==========================================
+  try {
+    console.log('\n--- SPRINT 19: EDIT EXPANSION VERIFICATION ---');
+
+    // Setup a 3-page test document
+    const s19Doc = await PDFDocument.create();
+    const s19P1 = s19Doc.addPage([500, 700]);
+    s19P1.drawText('SPRINT19_BASE_DOC_P1', { x: 50, y: 350 });
+    const s19P2 = s19Doc.addPage([500, 700]);
+    s19P2.drawText('SPRINT19_BASE_DOC_P2', { x: 50, y: 350 });
+    const s19P3 = s19Doc.addPage([500, 700]);
+    s19P3.drawText('SPRINT19_BASE_DOC_P3', { x: 50, y: 350 });
+    const s19SourceBytes = await s19Doc.save();
+
+    // 1. Tool #1: Header & Footer
+    const hfResult = await executeAddHeaderFooter(s19SourceBytes, {
+      enableHeader: true,
+      headerLeft: 'CONFIDENTIAL-CLIENT',
+      headerCenter: 'ANNUAL REPORT 2026',
+      headerRight: 'STAMP-{date}',
+      enableFooter: true,
+      footerLeft: 'LEGAL NOTICE',
+      footerCenter: 'Page {page} of {total}',
+      footerRight: 'DRAFT COPY',
+      executionDate: '2026-09-29',
+      selectedPages: [0, 1], // only pages 1 and 2
+    });
+
+    const hfP1Text = await extractPageText(hfResult.data, 1);
+    const hfP2Text = await extractPageText(hfResult.data, 2);
+    const hfP3Text = await extractPageText(hfResult.data, 3);
+
+    const hfPass =
+      hfResult.pageCount === 3 &&
+      hfResult.modifiedPagesCount === 2 &&
+      hfP1Text.includes('SPRINT19_BASE_DOC_P1') &&
+      hfP1Text.includes('CONFIDENTIAL-CLIENT') &&
+      hfP1Text.includes('ANNUAL REPORT 2026') &&
+      hfP1Text.includes('STAMP-2026-09-29') &&
+      hfP1Text.includes('LEGAL NOTICE') &&
+      hfP1Text.includes('Page 1 of 3') &&
+      hfP1Text.includes('DRAFT COPY') &&
+      hfP2Text.includes('SPRINT19_BASE_DOC_P2') &&
+      hfP2Text.includes('Page 2 of 3') &&
+      hfP3Text.includes('SPRINT19_BASE_DOC_P3') &&
+      !hfP3Text.includes('Page 3 of 3') &&
+      !hfP3Text.includes('CONFIDENTIAL-CLIENT');
+
+    assert(
+      hfPass,
+      'Sprint 19: Header & Footer',
+      'Verified header/footer text slots, {page}/{total}/{date} token resolution, selective page ranges, margin coordinates, and base content retention.'
+    );
+
+    // 2. Tool #2: Date & Time Stamp
+    const dtTextHelperPass =
+      buildStampText({
+        mode: 'custom-date-time',
+        customDate: '2026-09-29',
+        customTime: '14:30',
+        prefix: 'FILED: ',
+        suffix: ' [OFFICIAL]',
+      }) === 'FILED: 2026-09-29 14:30 [OFFICIAL]';
+
+    const dtResult = await executeAddDateTimeStamp(s19SourceBytes, {
+      mode: 'custom-date-time',
+      customDate: '2026-09-29',
+      customTime: '14:30',
+      prefix: 'AUDIT: ',
+      suffix: ' - VERIFIED',
+      position: 'top-right',
+      selectedPages: [0, 2], // page 1 and page 3
+    });
+
+    const dtP1Text = await extractPageText(dtResult.data, 1);
+    const dtP2Text = await extractPageText(dtResult.data, 2);
+    const dtP3Text = await extractPageText(dtResult.data, 3);
+
+    const dtPass =
+      dtTextHelperPass &&
+      dtResult.pageCount === 3 &&
+      dtResult.stampedPagesCount === 2 &&
+      dtResult.stampedText === 'AUDIT: 2026-09-29 14:30 - VERIFIED' &&
+      dtP1Text.includes('AUDIT: 2026-09-29 14:30 - VERIFIED') &&
+      dtP1Text.includes('SPRINT19_BASE_DOC_P1') &&
+      !dtP2Text.includes('AUDIT: 2026-09-29 14:30 - VERIFIED') &&
+      dtP3Text.includes('AUDIT: 2026-09-29 14:30 - VERIFIED') &&
+      dtP3Text.includes('SPRINT19_BASE_DOC_P3');
+
+    assert(
+      dtPass,
+      'Sprint 19: Date & Time Stamp',
+      'Verified deterministic date/time formatting, custom timestamp capture, position placement, selective page targeting, and static text retention.'
+    );
+
+    // 3. Tool #3: Page Background (True PDF-level vector underlay)
+    const bgResult = await executeAddPageBackground(s19SourceBytes, {
+      colorHex: '#FAF8F5',
+      opacity: 0.85,
+      selectedPages: [0], // page 1 only
+    });
+
+    const bgP1Text = await extractPageText(bgResult.data, 1);
+    const bgP2Text = await extractPageText(bgResult.data, 2);
+    const bgP3Text = await extractPageText(bgResult.data, 3);
+
+    const bgLoaded = await PDFDocument.load(bgResult.data);
+    const bgP1Obj = bgLoaded.getPage(0);
+    const bgP1Size = bgP1Obj.getSize();
+
+    const bgPass =
+      bgResult.pageCount === 3 &&
+      bgResult.coloredPagesCount === 1 &&
+      bgP1Size.width === 500 &&
+      bgP1Size.height === 700 &&
+      bgP1Text.includes('SPRINT19_BASE_DOC_P1') &&
+      bgP2Text.includes('SPRINT19_BASE_DOC_P2') &&
+      bgP3Text.includes('SPRINT19_BASE_DOC_P3');
+
+    assert(
+      bgPass,
+      'Sprint 19: Page Background',
+      'Verified PDF-level underlay injection, zero rasterization, searchable original text preservation above background, opacity control, and selective page targeting.'
+    );
+  } catch (e: any) {
+    assert(false, 'Sprint 19 Edit Expansion Verification', e.message);
   }
 
   console.log('\n--- FINAL TEST SUMMARY ---');

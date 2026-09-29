@@ -72,6 +72,15 @@ import {
   exportAcroFormDataToJson,
   exportAcroFormDataToCsv,
   AcroFormExportResult,
+  executeAddHeaderFooter,
+  HeaderFooterOptions,
+  HeaderFooterResult,
+  executeAddDateTimeStamp,
+  DateTimeStampOptions,
+  DateTimeStampResult,
+  executeAddPageBackground,
+  PageBackgroundOptions,
+  PageBackgroundResult,
 } from '../pdf/core/operations/index';
 import { pdfWorkerClient } from '../pdf/workers/workerClient';
 import { isValidPdfHeader } from '../pdf/core/documentModel';
@@ -513,6 +522,57 @@ export class DocumentService {
 
   async exportFormDataToCsv(data: Uint8Array): Promise<string> {
     return exportAcroFormDataToCsv(data);
+  }
+
+  async addHeaderFooter(
+    document: LocalDocument,
+    options: HeaderFooterOptions
+  ): Promise<{ document: LocalDocument; result: HeaderFooterResult }> {
+    if (!document.data) throw new Error('Document has no binary data');
+    const result = await executeAddHeaderFooter(document.data, options);
+    const updatedDoc: LocalDocument = {
+      ...document,
+      data: result.data,
+      pageCount: result.pageCount,
+      size: result.data.byteLength,
+      processingState: 'completed',
+      updatedAt: Date.now(),
+    };
+    return { document: updatedDoc, result };
+  }
+
+  async addDateTimeStamp(
+    document: LocalDocument,
+    options: DateTimeStampOptions
+  ): Promise<{ document: LocalDocument; result: DateTimeStampResult }> {
+    if (!document.data) throw new Error('Document has no binary data');
+    const result = await executeAddDateTimeStamp(document.data, options);
+    const updatedDoc: LocalDocument = {
+      ...document,
+      data: result.data,
+      pageCount: result.pageCount,
+      size: result.data.byteLength,
+      processingState: 'completed',
+      updatedAt: Date.now(),
+    };
+    return { document: updatedDoc, result };
+  }
+
+  async addPageBackground(
+    document: LocalDocument,
+    options: PageBackgroundOptions
+  ): Promise<{ document: LocalDocument; result: PageBackgroundResult }> {
+    if (!document.data) throw new Error('Document has no binary data');
+    const result = await executeAddPageBackground(document.data, options);
+    const updatedDoc: LocalDocument = {
+      ...document,
+      data: result.data,
+      pageCount: result.pageCount,
+      size: result.data.byteLength,
+      processingState: 'completed',
+      updatedAt: Date.now(),
+    };
+    return { document: updatedDoc, result };
   }
 }
 
