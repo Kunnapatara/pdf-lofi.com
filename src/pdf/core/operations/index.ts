@@ -40,3 +40,4 @@ export * from './textPrimitive';
 export * from './headerFooterOperation';
 export * from './dateTimeStampOperation';
 export * from './pageBackgroundOperation';
+export * from './batchRangeExportOperation';

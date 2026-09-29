@@ -82,6 +82,9 @@ import {
   buildStampText,
   executeAddPageBackground,
   formatLocalIsoDate,
+  executeBatchRangeExport,
+  parseBatchRanges,
+  buildBatchExportFilename,
 } from './src/pdf/core/operations';
 import { embedOcrTextLayer, PageOcrOutput } from './src/pdf/engines/ocrEngine';
 
@@ -3857,6 +3860,130 @@ async function runAllTests() {
     assert(t12_pass, 'Sprint 19.2: Test 12 (Date Semantics)', 'Header & Footer {date} and Date & Time Stamp both produce identical local calendar date.');
   } catch (e: any) {
     assert(false, 'Sprint 19.2 Structural Preservation Verification', e.message);
+  }
+
+  // ==========================================
+  // SPRINT 20: PAGE RANGE BATCH EXPORT VERIFICATION
+  // ==========================================
+  console.log('\n--- SPRINT 20: PAGE RANGE BATCH EXPORT VERIFICATION ---');
+  try {
+    // Setup a 30-page source PDF with text markers
+    const s20_srcDoc = await PDFDocument.create();
+    for (let i = 1; i <= 30; i++) {
+      const page = s20_srcDoc.addPage([500, 700]);
+      page.drawText(`Page Content Identifier ${i}`, { x: 50, y: 650, size: 12 });
+    }
+    const s20_srcBytes = await s20_srcDoc.save();
+
+    // Test 1: Canonical Range Parsing (Example: 1-3, 7-9, 15, 20-25)
+    const parseResult = parseBatchRanges('1-3, 7-9, 15, 20-25', 30);
+    const t1_pass =
+      parseResult.valid &&
+      parseResult.totalFiles === 4 &&
+      parseResult.totalExportedPages === 13 &&
+      parseResult.ranges[0].normalizedRange === '1-3' &&
+      parseResult.ranges[0].pageCount === 3 &&
+      parseResult.ranges[1].normalizedRange === '7-9' &&
+      parseResult.ranges[1].pageCount === 3 &&
+      parseResult.ranges[2].normalizedRange === '15' &&
+      parseResult.ranges[2].pageCount === 1 &&
+      parseResult.ranges[3].normalizedRange === '20-25' &&
+      parseResult.ranges[3].pageCount === 6;
+    assert(
+      t1_pass,
+      'Sprint 20: Test 1 (Canonical Range Parsing)',
+      '1-3, 7-9, 15, 20-25 parsed into 4 parts, 13 total pages with exact sub-page counts.'
+    );
+
+    // Test 2: Execution of Page Range Batch Export
+    const exportResult = await executeBatchRangeExport(s20_srcBytes, {
+      rangesInput: '1-3, 7-9, 15, 20-25',
+      outputPrefix: 'document',
+    });
+    const t2_pass =
+      exportResult.totalFiles === 4 &&
+      exportResult.totalExportedPages === 13 &&
+      exportResult.exports.length === 4 &&
+      exportResult.exports[0].name === 'document-pages-1-3.pdf' &&
+      exportResult.exports[0].pageCount === 3 &&
+      exportResult.exports[1].name === 'document-pages-7-9.pdf' &&
+      exportResult.exports[1].pageCount === 3 &&
+      exportResult.exports[2].name === 'document-page-15.pdf' &&
+      exportResult.exports[2].pageCount === 1 &&
+      exportResult.exports[3].name === 'document-pages-20-25.pdf' &&
+      exportResult.exports[3].pageCount === 6;
+    assert(
+      t2_pass,
+      'Sprint 20: Test 2 (Batch Export Execution & Naming)',
+      'Generated 4 independent PDF documents with document-pages-* and document-page-15.pdf filenames.'
+    );
+
+    // Test 3: Text Content & Page Identity Preservation in Exported Parts
+    const part2Pdf = await pdfjsLib.getDocument({ data: exportResult.exports[1].data }).promise;
+    const part2P1 = await part2Pdf.getPage(1); // Should be original page 7
+    const part2P3 = await part2Pdf.getPage(3); // Should be original page 9
+    const part2T1 = (await part2P1.getTextContent()).items.map((i: any) => i.str).join(' ');
+    const part2T3 = (await part2P3.getTextContent()).items.map((i: any) => i.str).join(' ');
+
+    const part3Pdf = await pdfjsLib.getDocument({ data: exportResult.exports[2].data }).promise;
+    const part3P1 = await part3Pdf.getPage(1); // Should be original page 15
+    const part3T1 = (await part3P1.getTextContent()).items.map((i: any) => i.str).join(' ');
+
+    const t3_pass =
+      part2T1.includes('Page Content Identifier 7') &&
+      part2T3.includes('Page Content Identifier 9') &&
+      part3T1.includes('Page Content Identifier 15');
+    assert(
+      t3_pass,
+      'Sprint 20: Test 3 (Page Content Identity Preservation)',
+      'Extracted parts contain exact original vector text corresponding to requested page indices.'
+    );
+
+    // Test 4: Custom Output Prefix & Sanitization
+    const customExport = await executeBatchRangeExport(s20_srcBytes, {
+      rangesInput: '1-2, 5',
+      outputPrefix: 'Annual Report / Q3 : Final.pdf',
+    });
+    const t4_pass =
+      customExport.exports[0].name === 'Annual Report _ Q3 _ Final-pages-1-2.pdf' &&
+      customExport.exports[1].name === 'Annual Report _ Q3 _ Final-page-5.pdf';
+    assert(
+      t4_pass,
+      'Sprint 20: Test 4 (Prefix Sanitization)',
+      'Custom prefixes sanitized of path separators and .pdf extension cleanly.'
+    );
+
+    // Test 5: Strict Validation Rejection (Out of Bounds, Inverted, Non-numeric)
+    const outOfBounds = parseBatchRanges('1-5, 35', 30);
+    const inverted = parseBatchRanges('5-2', 30);
+    const nonNumeric = parseBatchRanges('1-abc', 30);
+    const emptyInput = parseBatchRanges('   ', 30);
+    const t5_pass =
+      !outOfBounds.valid &&
+      !inverted.valid &&
+      !nonNumeric.valid &&
+      !emptyInput.valid;
+    assert(
+      t5_pass,
+      'Sprint 20: Test 5 (Strict Validation)',
+      'Invalid ranges (out of bounds, inverted 5-2, non-numeric, empty) correctly rejected.'
+    );
+
+    // Test 6: Delimiter Flexibility (Newlines & Semicolons)
+    const newlineParse = parseBatchRanges('1-3\n7-9\n15\n20-25', 30);
+    const semiParse = parseBatchRanges('1-3; 7-9; 15; 20-25', 30);
+    const t6_pass =
+      newlineParse.valid &&
+      newlineParse.totalFiles === 4 &&
+      semiParse.valid &&
+      semiParse.totalFiles === 4;
+    assert(
+      t6_pass,
+      'Sprint 20: Test 6 (Delimiter Support)',
+      'Commas, newlines, and semicolons correctly parsed as distinct range selections.'
+    );
+  } catch (e: any) {
+    assert(false, 'Sprint 20 Verification', e.message);
   }
 
   console.log('\n--- FINAL TEST SUMMARY ---');

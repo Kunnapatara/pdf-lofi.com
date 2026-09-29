@@ -81,6 +81,9 @@ import {
   executeAddPageBackground,
   PageBackgroundOptions,
   PageBackgroundResult,
+  executeBatchRangeExport,
+  BatchRangeExportOptions,
+  BatchRangeExportResult,
 } from '../pdf/core/operations/index';
 import { pdfWorkerClient } from '../pdf/workers/workerClient';
 import { isValidPdfHeader } from '../pdf/core/documentModel';
@@ -425,6 +428,17 @@ export class DocumentService {
   ): Promise<SplitEveryNResult> {
     if (!document.data) throw new Error('Document has no binary data');
     return executeSplitEveryNPdf(document.data, {
+      ...options,
+      outputPrefix: options.outputPrefix || document.name,
+    });
+  }
+
+  async batchRangeExport(
+    document: LocalDocument,
+    options: BatchRangeExportOptions
+  ): Promise<BatchRangeExportResult> {
+    if (!document.data) throw new Error('Document has no binary data');
+    return executeBatchRangeExport(document.data, {
       ...options,
       outputPrefix: options.outputPrefix || document.name,
     });

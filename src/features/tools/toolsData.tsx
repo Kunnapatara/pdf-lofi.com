@@ -38,6 +38,7 @@ import {
   PanelTop,
   CalendarDays,
   Palette,
+  FileOutput,
 } from 'lucide-react';
 import { ToolItem } from '../../types/pdf';
 
@@ -199,6 +200,18 @@ export const ALL_TOOLS: ToolDefinition[] = [
     viewKey: 'organize',
     actionKey: 'organize',
     icon: <Bookmark className="w-8 h-8" />,
+  },
+  {
+    id: 'page-range-batch-export',
+    name: 'Page Range Batch Export',
+    category: 'organize',
+    description: 'Export multiple user-defined page ranges and selections as separate PDF files in one operation.',
+    badge: 'New',
+    status: 'READY',
+    processingLocation: 'local',
+    viewKey: 'organize',
+    actionKey: 'organize',
+    icon: <FileOutput className="w-8 h-8" />,
   },
   {
     id: 'page-numbers',

@@ -56,6 +56,7 @@ import {
   PanelTop,
   CalendarDays,
   Palette,
+  FileOutput,
 } from 'lucide-react';
 import { AppView, ActiveTab } from '../../types/pdf';
 
@@ -309,6 +310,17 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     routeView: 'organize',
     workspaceTab: 'organize',
     keywords: ['split by bookmark', 'bookmark split', 'outline', 'chapters', 'table of contents', 'toc split', 'bookmarks'],
+  },
+  {
+    id: 'page-range-batch-export',
+    name: 'Page Range Batch Export',
+    shortDescription: 'Export multiple user-defined page ranges and selections as separate PDF files in one local operation.',
+    category: 'organize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'organize',
+    workspaceTab: 'organize',
+    keywords: ['batch export', 'page ranges', 'range export', 'split ranges', 'multi export', 'page range batch', 'export selections', 'split multiple'],
   },
 
   // ==========================================
@@ -996,6 +1008,8 @@ export function getToolIcon(id: string, className = 'w-6 h-6'): React.ReactNode 
       return React.createElement(Hash, { className });
     case 'split-by-bookmark':
       return React.createElement(Bookmark, { className });
+    case 'page-range-batch-export':
+      return React.createElement(FileOutput, { className });
     case 'page-selection':
       return React.createElement(CheckSquare, { className });
 

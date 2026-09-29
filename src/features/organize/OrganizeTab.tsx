@@ -25,6 +25,7 @@ import {
   CheckCircle2,
   Bookmark,
   Hash,
+  FileOutput,
 } from 'lucide-react';
 import { LocalDocument, DocumentPageInfo } from '../../types/pdf';
 import { generatePageThumbnail } from '../../pdf/rendering/thumbnailService';
@@ -44,6 +45,10 @@ import {
   InspectBookmarksResult,
   SplitBookmarkPart,
 } from '../../pdf/core/operations/bookmarkSplitOperation';
+import {
+  BatchExportPart,
+  parseBatchRanges,
+} from '../../pdf/core/operations/batchRangeExportOperation';
 
 interface OrganizeTabProps {
   document: LocalDocument;
@@ -109,6 +114,13 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
   const [selectedBookmarkRanges, setSelectedBookmarkRanges] = useState<string[]>([]);
   const [bookmarkSplitLevel, setBookmarkSplitLevel] = useState<'top-level' | 'all'>('top-level');
   const [bookmarkSplits, setBookmarkSplits] = useState<SplitBookmarkPart[] | null>(null);
+
+  // Modal for Page Range Batch Export (Sprint 20)
+  const [showBatchExportModal, setShowBatchExportModal] = useState(false);
+  const [batchRangesInput, setBatchRangesInput] = useState<string>('1-3, 7-9, 15, 20-25');
+  const [batchExportPrefix, setBatchExportPrefix] = useState<string>('');
+  const [batchExportResults, setBatchExportResults] = useState<BatchExportPart[] | null>(null);
+  const [batchExportError, setBatchExportError] = useState<string | null>(null);
 
   // Initialize page metadata array
   useEffect(() => {
@@ -638,6 +650,29 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
     }
   };
 
+  const handleApplyBatchRangeExport = async () => {
+    if (!document.data) return;
+    setIsProcessing(true);
+    setProcessingMsg('Exporting page ranges...');
+    setBatchExportError(null);
+    try {
+      const cleanPrefix = batchExportPrefix.trim() || document.name.replace(/\.pdf$/i, '');
+      const res = await documentService.batchRangeExport(document, {
+        rangesInput: batchRangesInput,
+        outputPrefix: cleanPrefix,
+      });
+      setBatchExportResults(res.exports);
+      setSuccessNotice(
+        `Successfully exported ${res.totalFiles} PDF file${res.totalFiles === 1 ? '' : 's'} (${res.totalExportedPages} pages total)`
+      );
+    } catch (err: any) {
+      setBatchExportError(err instanceof Error ? err.message : 'Batch range export failed');
+    } finally {
+      setIsProcessing(false);
+      setProcessingMsg('');
+    }
+  };
+
   const handleDownloadCurrent = () => {
     if (document.data) {
       triggerLocalDownload(document.data, document.name);
@@ -817,6 +852,21 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
             >
               <Bookmark className="w-3.5 h-3.5 text-stone-600" />
               <span>Split by Bookmark</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setBatchExportResults(null);
+                setBatchExportError(null);
+                setShowBatchExportModal(true);
+              }}
+              disabled={isProcessing}
+              id="btn-batch-range-export"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all cursor-pointer"
+              title="Export multiple page ranges and selections into separate PDF files in one local operation"
+            >
+              <FileOutput className="w-3.5 h-3.5 text-stone-600" />
+              <span>Batch Export</span>
             </button>
           </div>
 
@@ -2123,6 +2173,192 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
                     onClick={() => {
                       setShowBookmarkSplitModal(false);
                       setBookmarkSplits(null);
+                    }}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-stone-800 hover:bg-stone-900 text-white cursor-pointer"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Page Range Batch Export Modal (Sprint 20) */}
+      {showBatchExportModal && (
+        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-stone-200 animate-in fade-in zoom-in-95 duration-150 space-y-4">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
+                  <FileOutput className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-stone-900 text-base">Page Range Batch Export</h3>
+                  <p className="text-[11px] text-stone-500">
+                    Export multiple page ranges and selections into separate PDF files.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowBatchExportModal(false);
+                  setBatchExportResults(null);
+                  setBatchExportError(null);
+                }}
+                className="text-stone-400 hover:text-stone-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {batchExportError && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex justify-between items-center">
+                <span>{batchExportError}</span>
+                <button onClick={() => setBatchExportError(null)} className="cursor-pointer font-bold ml-2">✕</button>
+              </div>
+            )}
+
+            {!batchExportResults ? (
+              <div className="space-y-4 text-xs">
+                <div>
+                  <label className="block text-stone-700 font-bold mb-1">
+                    Page ranges (Total pages: {document.pageCount})
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={batchRangesInput}
+                    onChange={(e) => setBatchRangesInput(e.target.value)}
+                    placeholder="e.g. 1-3, 7-9, 15, 20-25"
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs font-mono focus:outline-orange-500 bg-stone-50/50 resize-none"
+                  />
+                  <p className="text-[10px] text-stone-400 mt-1">
+                    Separate multiple ranges by commas or newlines. Example: <code>1-3, 7-9, 15</code>
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-stone-700 font-bold mb-1">
+                    Filename prefix (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={batchExportPrefix}
+                    onChange={(e) => setBatchExportPrefix(e.target.value)}
+                    placeholder={document.name.replace(/\.pdf$/i, '') || 'document'}
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs focus:outline-orange-500"
+                  />
+                </div>
+
+                {/* Range Parse Live Preview */}
+                {(() => {
+                  const parseRes = parseBatchRanges(batchRangesInput, document.pageCount);
+                  return (
+                    <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl space-y-2">
+                      <div className="font-bold text-stone-800 text-[11px] uppercase tracking-wide">
+                        Preview
+                      </div>
+                      {parseRes.valid ? (
+                        <>
+                          <div className="max-h-36 overflow-y-auto space-y-1 pr-1 font-mono text-[11px]">
+                            {parseRes.ranges.map((r, i) => (
+                              <div key={i} className="flex items-center justify-between text-stone-700 py-0.5 border-b border-stone-200/50 last:border-0">
+                                <span className="font-semibold">{r.normalizedRange}</span>
+                                <span className="text-stone-500">→ {r.pageCount} {r.pageCount === 1 ? 'page' : 'pages'}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="pt-2 border-t border-stone-200 text-stone-600 font-semibold flex justify-between">
+                            <span>Total:</span>
+                            <span>{parseRes.totalFiles} PDF {parseRes.totalFiles === 1 ? 'file' : 'files'} • {parseRes.totalExportedPages} exported {parseRes.totalExportedPages === 1 ? 'page' : 'pages'}</span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-amber-700 text-[11px]">
+                          {parseRes.error || 'Enter valid page ranges.'}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+                  <button
+                    onClick={() => {
+                      setShowBatchExportModal(false);
+                      setBatchExportResults(null);
+                      setBatchExportError(null);
+                    }}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleApplyBatchRangeExport}
+                    disabled={isProcessing || !parseBatchRanges(batchRangesInput, document.pageCount).valid}
+                    id="btn-generate-batch-pdfs"
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white cursor-pointer"
+                  >
+                    {isProcessing ? 'Generating...' : 'Generate PDFs'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-stone-900">
+                    Generated {batchExportResults.length} Files:
+                  </span>
+                  <button
+                    onClick={() => {
+                      batchExportResults.forEach((part) => {
+                        triggerLocalDownload(part.data, part.name);
+                      });
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-orange-500 text-white hover:bg-orange-600 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download All Parts</span>
+                  </button>
+                </div>
+
+                <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                  {batchExportResults.map((part) => (
+                    <div
+                      key={part.partIndex}
+                      className="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between gap-2"
+                    >
+                      <div className="truncate">
+                        <div className="font-semibold text-stone-900 truncate" title={part.name}>
+                          {part.name}
+                        </div>
+                        <div className="text-[11px] text-stone-500">
+                          Range {part.rangeExpression} ({part.pageCount} {part.pageCount === 1 ? 'page' : 'pages'})
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => triggerLocalDownload(part.data, part.name)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-white border border-stone-200 text-stone-700 hover:bg-stone-100 cursor-pointer shrink-0"
+                      >
+                        <Download className="w-3 h-3 text-stone-600" />
+                        <span>Save</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+                  <button
+                    onClick={() => setBatchExportResults(null)}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 cursor-pointer"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowBatchExportModal(false);
+                      setBatchExportResults(null);
                     }}
                     className="px-4 py-2 rounded-xl text-xs font-bold bg-stone-800 hover:bg-stone-900 text-white cursor-pointer"
                   >
