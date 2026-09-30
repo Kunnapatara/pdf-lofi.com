@@ -4221,6 +4221,144 @@ async function runAllTests() {
     assert(false, 'Sprint 20.1 Verification Hardening', e.message);
   }
 
+  // ==========================================
+  // TOOL–WORKSPACE INTEGRATION & ARCHITECTURE RECONCILIATION
+  // ==========================================
+  console.log('\n--- TOOL–WORKSPACE INTEGRATION & ARCHITECTURE RECONCILIATION ---');
+  try {
+    const { CANONICAL_TOOLS, AVAILABLE_TOOLS } = await import('./src/features/tools/toolsRegistry');
+
+    // Test 1: Canonical Registry Contract & ID Uniqueness
+    const totalTools = CANONICAL_TOOLS.length;
+    const availableTools = AVAILABLE_TOOLS.length;
+    const roadmapTools = totalTools - availableTools;
+
+    const seenIds = new Set<string>();
+    let allIdsUnique = true;
+    let allFieldsValid = true;
+
+    const VALID_CATEGORIES = new Set([
+      'organize', 'edit', 'inspect', 'convert', 'forms', 'security', 'optimize', 'intelligence', 'workflows'
+    ]);
+
+    for (const tool of CANONICAL_TOOLS) {
+      if (seenIds.has(tool.id) || !tool.id) allIdsUnique = false;
+      seenIds.add(tool.id);
+
+      if (!tool.name || !tool.shortDescription || !VALID_CATEGORIES.has(tool.category)) {
+        allFieldsValid = false;
+      }
+      if (tool.status !== 'available' && tool.status !== 'coming_soon') {
+        allFieldsValid = false;
+      }
+      if (tool.processingLocation !== 'local') {
+        allFieldsValid = false;
+      }
+      if (tool.status === 'available') {
+        if (!tool.workspaceTab || !tool.routeView) {
+          allFieldsValid = false;
+        }
+      }
+    }
+
+    const t1_pass = totalTools === 75 && availableTools === 64 && roadmapTools === 11 && allIdsUnique && allFieldsValid;
+    assert(
+      t1_pass,
+      'Integration: Test 1 (Registry Contract & ID Uniqueness)',
+      'All 75 tools verified: 64 available, 11 roadmap, 100% unique IDs, valid categories and local processing boundary.'
+    );
+
+    // Test 2: Destination Workspace & Route Consistency
+    const VALID_WORKSPACES = new Set([
+      'view', 'organize', 'edit', 'convert', 'security', 'inspect', 'optimize', 'ocr', 'forms', 'compare', 'workflows', 'merge', 'split', 'tools'
+    ]);
+    const VALID_ROUTES = new Set([
+      'home', 'merge', 'split', 'compress', 'convert', 'security', 'tools', 'workspace', 'organize', 'viewer', 'pricing', 'account', 'edit', 'page-numbers', 'watermark', 'inspect', 'optimize', 'ocr', 'forms', 'compare', 'workflows'
+    ]);
+
+    let allDestinationsValid = true;
+    for (const tool of AVAILABLE_TOOLS) {
+      if (!VALID_WORKSPACES.has(tool.workspaceTab!) || !VALID_ROUTES.has(tool.routeView!)) {
+        allDestinationsValid = false;
+      }
+    }
+    assert(
+      allDestinationsValid,
+      'Integration: Test 2 (Workspace & Route Alignment)',
+      'All 64 available tools route to valid workspace tabs and recognized application views.'
+    );
+
+    // Test 3: Document Continuity Chain (Tool A -> currentDocument -> Tool B -> Tool C)
+    const initDoc = await PDFDocument.create();
+    for (let i = 1; i <= 3; i++) {
+      const p = initDoc.addPage([500, 700]);
+      p.drawText(`Pipeline Page ${i} Initial State`, { x: 50, y: 600 });
+    }
+    const step0Bytes = await initDoc.save();
+
+    // Tool A: Organize / Rotate Page 1 by 90 degrees
+    const step1 = await executeRotatePage(step0Bytes, 0, 90);
+    const docAfterStep1 = await PDFDocument.load(step1.data);
+    const p1RotationAfterStep1 = docAfterStep1.getPage(0).getRotation().angle;
+
+    // Tool B: Edit / Add Header & Footer on the mutated document
+    const step2 = await executeAddHeaderFooter(step1.data, {
+      headerCenter: 'Chain Verified Header',
+      footerCenter: 'Page {page} of {total}',
+    });
+    const docAfterStep2 = await PDFDocument.load(step2.data);
+    const p1RotationAfterStep2 = docAfterStep2.getPage(0).getRotation().angle;
+
+    // Tool C: Optimize / Compress on the mutated document
+    const step3 = await executeCompressPdf(step2.data, {
+      compressStreams: true,
+      stripMetadata: false,
+    });
+    const step3Len = step3.data.byteLength;
+    const docAfterStep3 = await PDFDocument.load(step3.data);
+    const p1RotationAfterStep3 = docAfterStep3.getPage(0).getRotation().angle;
+
+    // Check text extraction of step 3 to ensure header and original text remain intact
+    // Use .slice().buffer to prevent ArrayBuffer detachment during pdfjs worker ingestion
+    const pdfjsStep3 = await pdfjsLib.getDocument({ data: step3.data.slice().buffer }).promise;
+    const page1TextStep3 = (await (await pdfjsStep3.getPage(1)).getTextContent()).items.map((i: any) => i.str).join(' ');
+
+    const t3_pass =
+      p1RotationAfterStep1 === 90 &&
+      p1RotationAfterStep2 === 90 &&
+      p1RotationAfterStep3 === 90 &&
+      page1TextStep3.includes('Chain Verified Header') &&
+      page1TextStep3.includes('Pipeline Page 1 Initial State') &&
+      step3Len > 0;
+
+    assert(
+      t3_pass,
+      'Integration: Test 3 (Document Continuity Chain)',
+      'Chained operations (Rotate -> Header/Footer -> Compress) preserve cumulative transformations without state regression.'
+    );
+
+    // Test 4: Cross-Workspace UX Intentionality (Metadata Cleanup & Search)
+    const sanitizeTool = CANONICAL_TOOLS.find((t) => t.id === 'sanitize-metadata');
+    const searchTool = CANONICAL_TOOLS.find((t) => t.id === 'document-search');
+    const extractTool = CANONICAL_TOOLS.find((t) => t.id === 'extract-pages');
+
+    const t4_pass =
+      sanitizeTool?.category === 'optimize' &&
+      sanitizeTool?.workspaceTab === 'inspect' &&
+      searchTool?.category === 'inspect' &&
+      searchTool?.workspaceTab === 'view' &&
+      extractTool?.category === 'organize' &&
+      extractTool?.workspaceTab === 'split';
+
+    assert(
+      t4_pass,
+      'Integration: Test 4 (Cross-Workspace Taxonomy Contract)',
+      'Intentional cross-workspace routing (Sanitize Metadata in Inspect, Search in Viewer, Extract in Split) verified.'
+    );
+  } catch (e: any) {
+    assert(false, 'Integration Architecture Reconciliation', e.message);
+  }
+
   console.log('\n--- FINAL TEST SUMMARY ---');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`Passed: ${passedCount} / ${results.length}`);

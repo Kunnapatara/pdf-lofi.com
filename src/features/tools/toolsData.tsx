@@ -1,3 +1,14 @@
+/**
+ * @deprecated ARCHIVED LEGACY CATALOG
+ * ----------------------------------------------------------------------------
+ * This file is retained exclusively for backward compatibility and historical reference.
+ * The authoritative, single source of truth for all PDF tools, workspaces,
+ * categories, and routing is:
+ *   src/features/tools/toolsRegistry.ts (CANONICAL_TOOLS)
+ *
+ * Do NOT add, edit, or import tool definitions from this legacy file.
+ * ----------------------------------------------------------------------------
+ */
 import React from 'react';
 import {
   GitMerge,
