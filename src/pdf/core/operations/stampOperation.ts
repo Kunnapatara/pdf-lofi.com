@@ -5,6 +5,7 @@
 import { rgb, StandardFonts, degrees } from 'pdf-lib';
 import { loadPdfLibDoc, savePdfLibDoc } from '../../engines/pdfLibEngine';
 import { OperationResult } from './rotateOperation';
+import { parseHexColor } from './textPrimitive';
 
 export type PredefinedStampType = 'APPROVED' | 'DRAFT' | 'CONFIDENTIAL' | 'REVIEWED' | 'FINAL' | 'CUSTOM';
 
@@ -29,14 +30,6 @@ const STAMP_COLORS: Record<PredefinedStampType, string> = {
   CUSTOM: '#DC2626',
 };
 
-function hexToRgb(hex: string) {
-  const cleanHex = hex.replace('#', '');
-  const r = parseInt(cleanHex.substring(0, 2), 16) / 255;
-  const g = parseInt(cleanHex.substring(2, 4), 16) / 255;
-  const b = parseInt(cleanHex.substring(4, 6), 16) / 255;
-  return rgb(isNaN(r) ? 0.8 : r, isNaN(g) ? 0.1 : g, isNaN(b) ? 0.1 : b);
-}
-
 export async function executeAddStamp(
   data: Uint8Array,
   options: StampOptions
@@ -47,7 +40,7 @@ export async function executeAddStamp(
   const dateFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
   const text = (options.type === 'CUSTOM' ? options.customText || 'STAMP' : options.type).toUpperCase();
-  const color = hexToRgb(options.colorHex || STAMP_COLORS[options.type] || '#DC2626');
+  const color = parseHexColor(options.colorHex || STAMP_COLORS[options.type] || '#DC2626');
   const fontSize = options.fontSize || 28;
   const opacity = options.opacity !== undefined ? options.opacity : 0.85;
   const rotationDegrees = options.rotation !== undefined ? options.rotation : -20;

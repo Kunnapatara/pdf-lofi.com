@@ -41,3 +41,4 @@ export * from './headerFooterOperation';
 export * from './dateTimeStampOperation';
 export * from './pageBackgroundOperation';
 export * from './batchRangeExportOperation';
+export * from './visualOverlayPrimitive';

@@ -122,7 +122,8 @@ export const CAPABILITY_REGISTRY: Record<PdfCapabilityId, PdfCapability> = {
     description: 'Watermarking, electronic signature placement, raster image embedding, visual redaction masks, and page backgrounds.',
     targetWorkspace: 'edit',
     sharedPrimitives: [
-      'insertImageOperation (executeInsertImage, PNG/JPEG embedding, coordinate presets)',
+      'visualOverlayPrimitive (normalizeImageBytes, detectImageMimeType, embedVisualImage, calculateVisualPlacement, renderVisualOverlayOnPages, executeVisualOverlay)',
+      'insertImageOperation (executeInsertImage)',
       'pdfLibEngine (drawImage, drawRectangle, embedPng, embedJpg)',
       'rangeParser (parsePageRange)',
     ],

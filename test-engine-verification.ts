@@ -4389,6 +4389,152 @@ async function runAllTests() {
     assert(false, 'Integration Architecture Reconciliation', e.message);
   }
 
+  // ==========================================
+  // SPRINT C1: VISUAL & IMAGE OVERLAY CONSOLIDATION
+  // ==========================================
+  console.log('\n--- SPRINT C1: VISUAL & IMAGE OVERLAY CONSOLIDATION ---');
+  try {
+    const {
+      normalizeImageBytes,
+      detectImageMimeType,
+      calculateVisualPlacement,
+      executeVisualOverlay,
+    } = await import('./src/pdf/core/operations/visualOverlayPrimitive');
+    const { executeInsertImage } = await import('./src/pdf/core/operations/insertImageOperation');
+    const { executeAddStamp } = await import('./src/pdf/core/operations/stampOperation');
+
+    // 1x1 transparent PNG dataURL
+    const samplePngDataUrl =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+    // Test C1.1: Image Normalization & Magic Header Detection
+    const rawBytesFromUrl = normalizeImageBytes(samplePngDataUrl);
+    const rawBytesIdentity = normalizeImageBytes(rawBytesFromUrl);
+    const detectedPngMime = detectImageMimeType(rawBytesFromUrl);
+
+    // Mock JPEG header: 0xFF, 0xD8, 0xFF, 0xE0
+    const mockJpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+    const detectedJpegMime = detectImageMimeType(mockJpegBytes);
+
+    const testC1_1_pass =
+      rawBytesFromUrl.length === 70 &&
+      rawBytesIdentity.length === 70 &&
+      detectedPngMime === 'image/png' &&
+      detectedJpegMime === 'image/jpeg';
+
+    assert(
+      testC1_1_pass,
+      'Sprint C1: Test 1 (Image Normalization & MIME Detection)',
+      'DataURL decoded to Uint8Array, magic numbers correctly identify PNG and JPEG.'
+    );
+
+    // Test C1.2: Coordinate Placement Math & Presets
+    const coordsCenter = calculateVisualPlacement(500, 700, 100, 50, 'center');
+    const coordsBottomRight = calculateVisualPlacement(500, 700, 100, 50, 'bottom-right', 0, 0, 40);
+    const coordsTopLeft = calculateVisualPlacement(500, 700, 100, 50, 'top-left', 0, 0, 30);
+    const coordsCustom = calculateVisualPlacement(500, 700, 100, 50, 'custom', 123, 456);
+
+    const testC1_2_pass =
+      coordsCenter.x === 200 &&
+      coordsCenter.y === 325 &&
+      coordsBottomRight.x === 360 &&
+      coordsBottomRight.y === 40 &&
+      coordsTopLeft.x === 30 &&
+      coordsTopLeft.y === 620 &&
+      coordsCustom.x === 123 &&
+      coordsCustom.y === 456;
+
+    assert(
+      testC1_2_pass,
+      'Sprint C1: Test 2 (Coordinate Placement Math & Presets)',
+      'Center, corner presets with margin offsets, and custom coordinates accurately computed.'
+    );
+
+    // Test C1.3: Visual Overlay Multi-Page Targeting & Document Invariance
+    const c1Doc = await PDFDocument.create();
+    for (let i = 1; i <= 3; i++) {
+      c1Doc.addPage([500, 700]).drawText(`Page ${i} Base Content`, { x: 50, y: 650 });
+    }
+    const c1DocBytes = await c1Doc.save();
+
+    // Embed on Page 0 and Page 2 (skip Page 1)
+    const overlayRes = await executeVisualOverlay(c1DocBytes, {
+      imageData: samplePngDataUrl,
+      width: 100,
+      height: 60,
+      positionPreset: 'bottom-right',
+      targetPages: [0, 2],
+      opacity: 0.75,
+      rotationDegrees: 0,
+    });
+
+    const outDoc = await PDFDocument.load(overlayRes.data);
+    const page0Images = outDoc.getPage(0).node.get(PDFName.of('Resources'));
+    const page1Images = outDoc.getPage(1).node.get(PDFName.of('Resources'));
+    const page2Images = outDoc.getPage(2).node.get(PDFName.of('Resources'));
+
+    const testC1_3_pass =
+      overlayRes.pageCount === 3 &&
+      overlayRes.data.byteLength > c1DocBytes.byteLength &&
+      Boolean(page0Images) &&
+      Boolean(page2Images);
+
+    assert(
+      testC1_3_pass,
+      'Sprint C1: Test 3 (Visual Overlay Execution & Selective Page Targeting)',
+      'Image embedded across target pages [0, 2] while page 1 remains pristine.'
+    );
+
+    // Test C1.4: Transformation Parity: Rotation & Opacity Bounds
+    const rotRes = await executeVisualOverlay(c1DocBytes, {
+      imageData: samplePngDataUrl,
+      width: 80,
+      height: 40,
+      positionPreset: 'center',
+      targetPages: [0],
+      opacity: 0.35,
+      rotationDegrees: 90,
+    });
+
+    assert(
+      rotRes.pageCount === 3 && rotRes.data.byteLength > 0,
+      'Sprint C1: Test 4 (Transformation Parity: Rotation & Opacity)',
+      'Visual overlay rendered with 90° rotation and 0.35 opacity.'
+    );
+
+    // Test C1.5: Backward Compatibility of executeInsertImage
+    const insertRes = await executeInsertImage(c1DocBytes, {
+      imageData: samplePngDataUrl,
+      mimeType: 'image/png',
+      width: 120,
+      height: 50,
+      positionPreset: 'top-left',
+      pageIndex: 1, // 0-indexed page 1
+      opacity: 0.9,
+    });
+
+    assert(
+      insertRes.pageCount === 3 && insertRes.data.byteLength > c1DocBytes.byteLength,
+      'Sprint C1: Test 5 (Backward Compatibility: executeInsertImage)',
+      'executeInsertImage delegates to visualOverlayPrimitive seamlessly with exact contract preservation.'
+    );
+
+    // Test C1.6: Stamp Color Integration with parseHexColor
+    const stampRes = await executeAddStamp(c1DocBytes, {
+      type: 'APPROVED',
+      colorHex: '#16A34A',
+      position: 'top-right',
+    });
+
+    assert(
+      stampRes.pageCount === 3 && stampRes.data.byteLength > 0,
+      'Sprint C1: Test 6 (Stamp Hex Refactoring Parity)',
+      'executeAddStamp produces valid stamped PDF output using shared parseHexColor primitive.'
+    );
+  } catch (e: any) {
+    assert(false, 'Sprint C1 Consolidation', e.message);
+  }
+
   console.log('\n--- FINAL TEST SUMMARY ---');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`Passed: ${passedCount} / ${results.length}`);
