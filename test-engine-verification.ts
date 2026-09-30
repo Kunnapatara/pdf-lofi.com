@@ -4355,6 +4355,36 @@ async function runAllTests() {
       'Integration: Test 4 (Cross-Workspace Taxonomy Contract)',
       'Intentional cross-workspace routing (Sanitize Metadata in Inspect, Search in Viewer, Extract in Split) verified.'
     );
+
+    // Test 5: Capability Registry & Tool Scalability Safety Contract
+    const { CAPABILITY_REGISTRY, validateToolScalabilityContract } = await import(
+      './src/features/tools/capabilities'
+    );
+    const capabilityKeys = Object.keys(CAPABILITY_REGISTRY);
+    let allToolsPassContract = true;
+    let totalMappedTools = 0;
+
+    for (const tool of CANONICAL_TOOLS) {
+      const validation = validateToolScalabilityContract(tool);
+      if (!validation.valid) {
+        allToolsPassContract = false;
+      }
+    }
+
+    for (const cap of Object.values(CAPABILITY_REGISTRY)) {
+      totalMappedTools += cap.toolIds.length;
+    }
+
+    const t5_pass =
+      capabilityKeys.length === 10 &&
+      totalMappedTools === 75 &&
+      allToolsPassContract;
+
+    assert(
+      t5_pass,
+      'Integration: Test 5 (Scalability Safety Contract & Capability Mapping)',
+      'All 75 canonical tools validated against the Scalability Contract across 10 shared capabilities with zero drift.'
+    );
   } catch (e: any) {
     assert(false, 'Integration Architecture Reconciliation', e.message);
   }
