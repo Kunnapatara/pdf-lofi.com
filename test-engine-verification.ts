@@ -84,6 +84,7 @@ import {
   formatLocalIsoDate,
   executeBatchRangeExport,
   parseBatchRanges,
+  parsePageRange,
   buildBatchExportFilename,
 } from './src/pdf/core/operations';
 import { embedOcrTextLayer, PageOcrOutput } from './src/pdf/engines/ocrEngine';
@@ -3984,6 +3985,240 @@ async function runAllTests() {
     );
   } catch (e: any) {
     assert(false, 'Sprint 20 Verification', e.message);
+  }
+
+  // ==========================================
+  // SPRINT 20.1: VERIFICATION HARDENING
+  // ==========================================
+  console.log('\n--- SPRINT 20.1: VERIFICATION HARDENING FOR BATCH EXPORT ---');
+  try {
+    // ----------------------------------------------------
+    // Test A: Blank Page Preservation
+    // ----------------------------------------------------
+    const s20_1_docBlank = await PDFDocument.create();
+    s20_1_docBlank.addPage([400, 600]).drawText('Page 1 Text Content');
+    s20_1_docBlank.addPage([400, 600]); // Truly blank page 2 (no drawing/content stream)
+    s20_1_docBlank.addPage([400, 600]).drawText('Page 3 Text Content');
+    const s20_1_bytesBlank = await s20_1_docBlank.save();
+
+    const s20_1_resBlank = await executeBatchRangeExport(s20_1_bytesBlank, { rangesInput: '1-3' });
+    const s20_1_pdfjsBlank = await pdfjsLib.getDocument({ data: s20_1_resBlank.exports[0].data }).promise;
+    const s20_1_p1Text = (await (await s20_1_pdfjsBlank.getPage(1)).getTextContent()).items.map((i: any) => i.str).join('');
+    const s20_1_p2Text = (await (await s20_1_pdfjsBlank.getPage(2)).getTextContent()).items.map((i: any) => i.str).join('');
+    const s20_1_p3Text = (await (await s20_1_pdfjsBlank.getPage(3)).getTextContent()).items.map((i: any) => i.str).join('');
+
+    const testA_pass =
+      s20_1_resBlank.exports[0].pageCount === 3 &&
+      s20_1_p1Text.includes('Page 1 Text Content') &&
+      s20_1_p2Text.trim() === '' &&
+      s20_1_p3Text.includes('Page 3 Text Content');
+
+    assert(
+      testA_pass,
+      'Sprint 20.1: Test A (Blank Page Preservation)',
+      'Blank page 2 preserved without content insertion or omission across copyPages.'
+    );
+
+    // ----------------------------------------------------
+    // Test B: Page Geometry Preservation (MediaBox & CropBox)
+    // ----------------------------------------------------
+    const s20_1_docGeo = await PDFDocument.create();
+    s20_1_docGeo.addPage([595.28, 841.89]); // A4
+    s20_1_docGeo.addPage([612, 792]); // Letter
+    const s20_1_pCustom = s20_1_docGeo.addPage([300, 450]); // Custom dimensions
+    s20_1_pCustom.setCropBox(20, 25, 260, 400); // Non-zero CropBox
+    const s20_1_bytesGeo = await s20_1_docGeo.save();
+
+    const s20_1_resGeo = await executeBatchRangeExport(s20_1_bytesGeo, { rangesInput: '1-3' });
+    const s20_1_outGeoDoc = await PDFDocument.load(s20_1_resGeo.exports[0].data);
+    const outA4 = s20_1_outGeoDoc.getPage(0).getMediaBox();
+    const outLetter = s20_1_outGeoDoc.getPage(1).getMediaBox();
+    const outCustomMB = s20_1_outGeoDoc.getPage(2).getMediaBox();
+    const outCustomCB = s20_1_outGeoDoc.getPage(2).getCropBox();
+
+    const testB_pass =
+      Math.abs(outA4.width - 595.28) < 0.1 &&
+      Math.abs(outA4.height - 841.89) < 0.1 &&
+      Math.abs(outLetter.width - 612) < 0.1 &&
+      Math.abs(outLetter.height - 792) < 0.1 &&
+      outCustomMB.width === 300 &&
+      outCustomMB.height === 450 &&
+      outCustomCB.x === 20 &&
+      outCustomCB.y === 25 &&
+      outCustomCB.width === 260 &&
+      outCustomCB.height === 400;
+
+    assert(
+      testB_pass,
+      'Sprint 20.1: Test B (Page Geometry Preservation)',
+      'A4, Letter, Custom MediaBox, and non-zero CropBox dimensions 100% preserved.'
+    );
+
+    // ----------------------------------------------------
+    // Test C: Rotation Preservation (0°, 90°, 180°, 270°)
+    // ----------------------------------------------------
+    const s20_1_docRot = await PDFDocument.create();
+    for (const rot of [0, 90, 180, 270]) {
+      const p = s20_1_docRot.addPage([400, 600]);
+      p.setRotation(degrees(rot));
+      p.drawText(`Rotated ${rot}`);
+    }
+    const s20_1_bytesRot = await s20_1_docRot.save();
+
+    const s20_1_resRot = await executeBatchRangeExport(s20_1_bytesRot, { rangesInput: '1-4' });
+    const s20_1_outRotDoc = await PDFDocument.load(s20_1_resRot.exports[0].data);
+    const rots = [0, 1, 2, 3].map((idx) => s20_1_outRotDoc.getPage(idx).getRotation().angle);
+
+    const testC_pass = rots[0] === 0 && rots[1] === 90 && rots[2] === 180 && rots[3] === 270;
+    assert(
+      testC_pass,
+      'Sprint 20.1: Test C (Rotation Preservation)',
+      'Page-level rotation properties 0°, 90°, 180°, 270° preserved on exported pages.'
+    );
+
+    // ----------------------------------------------------
+    // Test D: URI Annotation / Link Preservation
+    // ----------------------------------------------------
+    const s20_1_docLink = await PDFDocument.create();
+    const s20_1_pLink = s20_1_docLink.addPage([400, 600]);
+    s20_1_pLink.drawText('Hyperlink Test Page');
+    const s20_1_linkAnnot = s20_1_docLink.context.obj({
+      Type: 'Annot',
+      Subtype: 'Link',
+      Rect: [50, 50, 200, 80],
+      A: {
+        Type: 'Action',
+        S: 'URI',
+        URI: PDFString.of('https://example.com/test-hardened'),
+      },
+    });
+    s20_1_pLink.node.set(
+      PDFName.of('Annots'),
+      s20_1_docLink.context.obj([s20_1_docLink.context.register(s20_1_linkAnnot)])
+    );
+    const s20_1_bytesLink = await s20_1_docLink.save();
+
+    const s20_1_resLink = await executeBatchRangeExport(s20_1_bytesLink, { rangesInput: '1' });
+    const s20_1_pdfjsLink = await pdfjsLib.getDocument({ data: s20_1_resLink.exports[0].data }).promise;
+    const s20_1_annots = await (await s20_1_pdfjsLink.getPage(1)).getAnnotations();
+
+    const testD_pass =
+      s20_1_annots.length === 1 &&
+      s20_1_annots[0].subtype === 'Link' &&
+      s20_1_annots[0].url === 'https://example.com/test-hardened';
+
+    assert(
+      testD_pass,
+      'Sprint 20.1: Test D (URI Annotation / Link Preservation)',
+      'URI link annotation preserved with target URL intact on exported page.'
+    );
+
+    // ----------------------------------------------------
+    // Test E: AcroForm Preservation Boundary & Limitation
+    // ----------------------------------------------------
+    const s20_1_docForm = await PDFDocument.create();
+    const s20_1_pForm = s20_1_docForm.addPage([400, 600]);
+    const s20_1_form = s20_1_docForm.getForm();
+    const s20_1_field = s20_1_form.createTextField('test.field');
+    s20_1_field.setText('Sample Value');
+    s20_1_field.addToPage(s20_1_pForm, { x: 50, y: 500, width: 200, height: 30 });
+    const s20_1_bytesForm = await s20_1_docForm.save();
+
+    const s20_1_resForm = await executeBatchRangeExport(s20_1_bytesForm, { rangesInput: '1' });
+    const s20_1_outFormDoc = await PDFDocument.load(s20_1_resForm.exports[0].data);
+    let s20_1_hasForm = false;
+    try {
+      s20_1_hasForm = s20_1_outFormDoc.getForm().getFields().length > 0;
+    } catch {
+      s20_1_hasForm = false;
+    }
+    // As documented by pdf-lib architecture, copyPages() copies page visual nodes, but document Catalog /AcroForm is not copied.
+    const testE_documented = !s20_1_hasForm; // Confirms the known library limitation boundary
+    assert(
+      testE_documented,
+      'Sprint 20.1: Test E (AcroForm Preservation - LIBRARY_LIMITATION)',
+      'Documented library boundary: pdf-lib copyPages() does not carry catalog-level /AcroForm dictionary to new document.'
+    );
+
+    // ----------------------------------------------------
+    // Test F: Duplicate Semantics Across Separate Ranges (1-3, 3-5)
+    // ----------------------------------------------------
+    const s20_1_docDup = await PDFDocument.create();
+    for (let i = 1; i <= 6; i++) {
+      s20_1_docDup.addPage([400, 600]).drawText(`Page ${i}`);
+    }
+    const s20_1_bytesDup = await s20_1_docDup.save();
+
+    const s20_1_resDup = await executeBatchRangeExport(s20_1_bytesDup, { rangesInput: '1-3, 3-5' });
+    const testF_pass =
+      s20_1_resDup.totalFiles === 2 &&
+      s20_1_resDup.exports[0].pageNumbers.join(',') === '1,2,3' &&
+      s20_1_resDup.exports[1].pageNumbers.join(',') === '3,4,5' &&
+      s20_1_resDup.exports[0].name === 'document-pages-1-3.pdf' &&
+      s20_1_resDup.exports[1].name === 'document-pages-3-5.pdf';
+
+    assert(
+      testF_pass,
+      'Sprint 20.1: Test F (Cross-Range Duplicate Semantics)',
+      '1-3, 3-5 preserves shared page 3 across independent files without global suppression.'
+    );
+
+    // ----------------------------------------------------
+    // Test G: Range Order (5-7, 1-3)
+    // ----------------------------------------------------
+    const s20_1_docOrder = await PDFDocument.create();
+    for (let i = 1; i <= 8; i++) {
+      s20_1_docOrder.addPage([400, 600]).drawText(`Page ${i}`);
+    }
+    const s20_1_bytesOrder = await s20_1_docOrder.save();
+
+    const s20_1_resOrder = await executeBatchRangeExport(s20_1_bytesOrder, { rangesInput: '5-7, 1-3' });
+    const testG_pass =
+      s20_1_resOrder.totalFiles === 2 &&
+      s20_1_resOrder.exports[0].rangeExpression === '5-7' &&
+      s20_1_resOrder.exports[0].pageNumbers.join(',') === '5,6,7' &&
+      s20_1_resOrder.exports[1].rangeExpression === '1-3' &&
+      s20_1_resOrder.exports[1].pageNumbers.join(',') === '1,2,3';
+
+    assert(
+      testG_pass,
+      'Sprint 20.1: Test G (Range Order Preservation)',
+      'Range order (5-7, 1-3) strictly preserved without numerical sorting of output files.'
+    );
+
+    // ----------------------------------------------------
+    // Test H: Existing Validation Regression
+    // ----------------------------------------------------
+    const parseEmpty = parseBatchRanges('', 10);
+    const parseSpaces = parseBatchRanges('   ', 10);
+    const parseMalformed = parseBatchRanges('1-2-3', 10);
+    const parseNonNum = parseBatchRanges('1, xyz', 10);
+    const parseZero = parseBatchRanges('0-3', 10);
+    const parseOverMax = parseBatchRanges('1-15', 10);
+    const parseInverted = parseBatchRanges('7-3', 10);
+    const canonicalDups = parsePageRange('1, 1, 2', 10);
+    const parseDelimiters = parseBatchRanges('1-2\n3-4; 5', 10);
+
+    const testH_pass =
+      !parseEmpty.valid &&
+      !parseSpaces.valid &&
+      !parseMalformed.valid &&
+      !parseNonNum.valid &&
+      !parseZero.valid &&
+      !parseOverMax.valid &&
+      !parseInverted.valid &&
+      canonicalDups.valid &&
+      canonicalDups.pageNumbers.join(',') === '1,2' && // canonical dedupe within range
+      parseDelimiters.valid &&
+      parseDelimiters.totalFiles === 3;
+
+    assert(
+      testH_pass,
+      'Sprint 20.1: Test H (Existing Validation Regression)',
+      'All boundary conditions (empty, malformed, out of bounds, inverted, intra-range dedupe) strictly validated.'
+    );
+  } catch (e: any) {
+    assert(false, 'Sprint 20.1 Verification Hardening', e.message);
   }
 
   console.log('\n--- FINAL TEST SUMMARY ---');
