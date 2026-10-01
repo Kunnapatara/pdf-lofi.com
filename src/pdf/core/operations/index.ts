@@ -43,3 +43,4 @@ export * from './pageBackgroundOperation';
 export * from './batchRangeExportOperation';
 export * from './visualOverlayPrimitive';
 export * from './imageWatermarkOperation';
+export * from './pageGeometryPrimitive';

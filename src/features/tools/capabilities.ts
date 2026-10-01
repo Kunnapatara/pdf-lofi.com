@@ -82,6 +82,7 @@ export const CAPABILITY_REGISTRY: Record<PdfCapabilityId, PdfCapability> = {
     description: 'CropBox margin adjustments, standard dimensions standardization (A4/Letter/Legal), N-Up, and booklet imposition.',
     targetWorkspace: 'organize',
     sharedPrimitives: [
+      'pageGeometryPrimitive (resolvePageDimensions, calculateAspectFit, calculateSlotGrid, safeEmbedPage, STANDARD_PAGE_SIZES)',
       'pdfLibEngine (embedPage, setCropBox, setMediaBox, scale)',
       'STANDARD_SIZES (a4, letter, legal dimension presets)',
     ],

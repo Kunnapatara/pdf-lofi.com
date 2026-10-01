@@ -3,10 +3,16 @@
  * Arranges PDF pages into print-ready booklet signatures with automatic
  * saddle-stitch imposition, duplex front/back layout, and blank-page padding.
  * Preserves source page vector content, fonts, and graphics using pdf-lib embedPage.
+ * Refactored in Sprint C2.1 to consume shared pageGeometryPrimitive.
  */
-import { PDFName } from 'pdf-lib';
 import { loadPdfLibDoc, savePdfLibDoc, createEmptyPdfDoc } from '../../engines/pdfLibEngine';
 import { OperationResult } from './rotateOperation';
+import {
+  resolvePageDimensions,
+  calculateSlotGrid,
+  calculateAspectFit,
+  safeEmbedPage,
+} from './pageGeometryPrimitive';
 
 export interface BookletOptions {
   paperSize?: 'A4' | 'Letter';
@@ -22,15 +28,6 @@ export interface BookletResult extends OperationResult {
   sheetsCount: number;
   signaturesCount: number;
 }
-
-const BOOKLET_PAPER_SIZES: Record<'A4' | 'Letter', { landscape: [number, number] }> = {
-  A4: {
-    landscape: [841.89, 595.28],
-  },
-  Letter: {
-    landscape: [792.0, 612.0],
-  },
-};
 
 /**
  * Executes Booklet Signature Imposition on a PDF document.
@@ -65,7 +62,10 @@ export async function executeBookletPdf(
   const bindingEdge = options?.bindingEdge || 'left';
   const sigOption = options?.signatureSize || 'all';
 
-  const [sheetW, sheetH] = BOOKLET_PAPER_SIZES[paper].landscape;
+  const { width: sheetW, height: sheetH } = resolvePageDimensions({
+    paperSize: paper,
+    orientation: 'landscape',
+  });
 
   // Split into signature groups of indices
   const signatureChunks: number[][] = [];
@@ -87,9 +87,15 @@ export async function executeBookletPdf(
   let totalPaddedPages = 0;
   let totalSheets = 0;
 
-  // Usable slot width and height for 2 side-by-side pages on landscape sheet
-  const slotW = (sheetW - 2 * margin - spacing) / 2;
-  const slotH = sheetH - 2 * margin;
+  // 2-slot grid (1 row, 2 columns) on landscape sheet
+  const grid = calculateSlotGrid({
+    sheetWidth: sheetW,
+    sheetHeight: sheetH,
+    cols: 2,
+    rows: 1,
+    margin,
+    spacing,
+  });
 
   for (const sigIndices of signatureChunks) {
     // Pad signature page count to the next multiple of 4
@@ -113,28 +119,24 @@ export async function executeBookletPdf(
 
       const globalPageIdx = sigIndices[localSigIdx];
       const srcPage = srcDoc.getPage(globalPageIdx);
+      const embedded = await safeEmbedPage(outDoc, srcPage);
 
-      // Ensure page has /Contents stream so embedPage does not throw
-      if (!srcPage.node.has(PDFName.of('Contents'))) {
-        srcPage.drawText('', { x: 0, y: 0, size: 0.1 });
-      }
+      const fit = calculateAspectFit({
+        srcWidth: embedded.width,
+        srcHeight: embedded.height,
+        targetWidth: grid.slotWidth,
+        targetHeight: grid.slotHeight,
+      });
 
-      const embedded = await outDoc.embedPage(srcPage);
-      const scale = Math.min(slotW / embedded.width, slotH / embedded.height);
-      const drawW = embedded.width * scale;
-      const drawH = embedded.height * scale;
-
-      const slotX = isLeftSlot ? margin : margin + slotW + spacing;
-      const slotY = margin;
-
-      const drawX = slotX + (slotW - drawW) / 2;
-      const drawY = slotY + (slotH - drawH) / 2;
+      const { slotX, slotY } = grid.getSlotCoordinates(isLeftSlot ? 0 : 1, 0);
+      const drawX = slotX + fit.x;
+      const drawY = slotY + fit.y;
 
       targetPage.drawPage(embedded, {
         x: drawX,
         y: drawY,
-        width: drawW,
-        height: drawH,
+        width: fit.width,
+        height: fit.height,
       });
     };
 
@@ -166,3 +168,4 @@ export async function executeBookletPdf(
     signaturesCount: signatureChunks.length,
   };
 }
+

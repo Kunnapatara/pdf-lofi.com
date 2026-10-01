@@ -2,10 +2,16 @@
  * N-Up PDF Operation for PDF-LoFi.
  * Composites multiple source pages onto a single sheet (2-up, 4-up, 6-up, 8-up).
  * Preserves source page vector content, fonts, and graphics using pdf-lib embedPage.
+ * Refactored in Sprint C2.1 to consume shared pageGeometryPrimitive.
  */
-import { PDFName } from 'pdf-lib';
 import { loadPdfLibDoc, savePdfLibDoc, createEmptyPdfDoc } from '../../engines/pdfLibEngine';
 import { OperationResult } from './rotateOperation';
+import {
+  resolvePageDimensions,
+  calculateSlotGrid,
+  calculateAspectFit,
+  safeEmbedPage,
+} from './pageGeometryPrimitive';
 
 export type NUpLayout = '2-up' | '4-up' | '6-up' | '8-up';
 
@@ -17,17 +23,6 @@ export interface NUpOptions {
   orientation?: 'portrait' | 'landscape' | 'auto';
   pageOrder?: 'horizontal' | 'vertical';
 }
-
-const PAPER_SIZES: Record<'A4' | 'Letter', { portrait: [number, number]; landscape: [number, number] }> = {
-  A4: {
-    portrait: [595.28, 841.89],
-    landscape: [841.89, 595.28],
-  },
-  Letter: {
-    portrait: [612.0, 792.0],
-    landscape: [792.0, 612.0],
-  },
-};
 
 /**
  * Executes N-Up page imposition on a PDF document.
@@ -90,14 +85,19 @@ export async function executeNUpPdf(
 
   const outDoc = await createEmptyPdfDoc();
 
-  const sheetDims = isLandscape
-    ? PAPER_SIZES[paper].landscape
-    : PAPER_SIZES[paper].portrait;
+  const { width: sheetW, height: sheetH } = resolvePageDimensions({
+    paperSize: paper,
+    orientation: isLandscape ? 'landscape' : 'portrait',
+  });
 
-  const [sheetW, sheetH] = sheetDims;
-
-  const slotW = (sheetW - 2 * margin - (cols - 1) * spacing) / cols;
-  const slotH = (sheetH - 2 * margin - (rows - 1) * spacing) / rows;
+  const grid = calculateSlotGrid({
+    sheetWidth: sheetW,
+    sheetHeight: sheetH,
+    cols,
+    rows,
+    margin,
+    spacing,
+  });
 
   for (let s = 0; s < sheetCount; s++) {
     const outPage = outDoc.addPage([sheetW, sheetH]);
@@ -107,11 +107,7 @@ export async function executeNUpPdf(
       if (pageIdx >= srcPageCount) break;
 
       const srcPage = srcDoc.getPage(pageIdx);
-      // Ensure page has a /Contents stream so embedPage does not throw on empty/blank pages
-      if (!srcPage.node.has(PDFName.of('Contents'))) {
-        srcPage.drawText('', { x: 0, y: 0, size: 0.1 });
-      }
-      const embedded = await outDoc.embedPage(srcPage);
+      const embedded = await safeEmbedPage(outDoc, srcPage);
 
       let col: number;
       let row: number;
@@ -123,23 +119,23 @@ export async function executeNUpPdf(
         row = Math.floor(slot / cols);
       }
 
-      const slotX = margin + col * (slotW + spacing);
-      // In PDF coordinates, y=0 is at the bottom, so row 0 (top row) is at highest y
-      const slotY = margin + (rows - 1 - row) * (slotH + spacing);
+      const { slotX, slotY } = grid.getSlotCoordinates(col, row);
 
-      // Aspect ratio fit
-      const scale = Math.min(slotW / embedded.width, slotH / embedded.height);
-      const drawW = embedded.width * scale;
-      const drawH = embedded.height * scale;
+      const fit = calculateAspectFit({
+        srcWidth: embedded.width,
+        srcHeight: embedded.height,
+        targetWidth: grid.slotWidth,
+        targetHeight: grid.slotHeight,
+      });
 
-      const drawX = slotX + (slotW - drawW) / 2;
-      const drawY = slotY + (slotH - drawH) / 2;
+      const drawX = slotX + fit.x;
+      const drawY = slotY + fit.y;
 
       outPage.drawPage(embedded, {
         x: drawX,
         y: drawY,
-        width: drawW,
-        height: drawH,
+        width: fit.width,
+        height: fit.height,
       });
     }
   }
@@ -150,3 +146,4 @@ export async function executeNUpPdf(
     pageCount: outDoc.getPageCount(),
   };
 }
+
