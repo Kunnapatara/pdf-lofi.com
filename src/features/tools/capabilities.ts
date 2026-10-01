@@ -84,7 +84,6 @@ export const CAPABILITY_REGISTRY: Record<PdfCapabilityId, PdfCapability> = {
     sharedPrimitives: [
       'pageGeometryPrimitive (resolvePageDimensions, calculateAspectFit, calculateSlotGrid, safeEmbedPage, STANDARD_PAGE_SIZES)',
       'pdfLibEngine (embedPage, setCropBox, setMediaBox, scale)',
-      'STANDARD_SIZES (a4, letter, legal dimension presets)',
     ],
     reuseLevel: 'HIGH_REUSE',
     mutationModel: 'mutates_document',

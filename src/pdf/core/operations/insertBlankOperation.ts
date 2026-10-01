@@ -1,9 +1,10 @@
 /**
  * Insert Blank Page Operation for PDF-LoFi.
  * Appends or inserts a standard clean A4 page at target index.
+ * Refactored in Sprint C2.2 to consume canonical pageGeometryPrimitive.
  */
 import { loadPdfLibDoc, savePdfLibDoc } from '../../engines/pdfLibEngine';
-import { STANDARD_A4 } from '../pageModel';
+import { STANDARD_PAGE_SIZES } from './pageGeometryPrimitive';
 import { OperationResult } from './rotateOperation';
 
 export async function executeInsertBlankPage(
@@ -14,8 +15,9 @@ export async function executeInsertBlankPage(
   const total = srcDoc.getPageCount();
   const clampedIndex = Math.max(0, Math.min(targetIndex, total));
 
-  // A4 size: 595.28 x 841.89 points
-  srcDoc.insertPage(clampedIndex, [STANDARD_A4.width, STANDARD_A4.height]);
+  // Canonical A4 portrait dimensions from pageGeometryPrimitive
+  const [a4Width, a4Height] = STANDARD_PAGE_SIZES.A4.portrait;
+  srcDoc.insertPage(clampedIndex, [a4Width, a4Height]);
 
   const savedBytes = await savePdfLibDoc(srcDoc);
   return {
@@ -23,3 +25,4 @@ export async function executeInsertBlankPage(
     pageCount: srcDoc.getPageCount(),
   };
 }
+

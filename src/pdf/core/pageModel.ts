@@ -1,16 +1,22 @@
 /**
  * Canonical Page Model & Dimension Utilities for PDF-LoFi.
+ * Standard dimensions are canonicalized in pageGeometryPrimitive.ts (Sprint C2.2).
  */
+import { STANDARD_PAGE_SIZES } from './operations/pageGeometryPrimitive';
 
 export interface PageDimension {
   width: number;
   height: number;
 }
 
+/**
+ * Re-exported for backward compatibility, referencing the single canonical source of truth.
+ */
 export const STANDARD_A4: PageDimension = {
-  width: 595.28,
-  height: 841.89,
+  width: STANDARD_PAGE_SIZES.A4.portrait[0],
+  height: STANDARD_PAGE_SIZES.A4.portrait[1],
 };
+
 
 export interface CanonicalPage {
   pageIndex: number; // 0-indexed position

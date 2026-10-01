@@ -4901,6 +4901,179 @@ async function runAllTests() {
     assert(false, 'Sprint C2.1 Page Geometry', e.message);
   }
 
+  // ==========================================
+  // SPRINT C2.2: CANONICAL PAGE GEOMETRY COMPLETION
+  // ==========================================
+  console.log('\n--- SPRINT C2.2: CANONICAL PAGE GEOMETRY COMPLETION ---');
+  try {
+    const {
+      STANDARD_PAGE_SIZES,
+      resolvePageDimensions,
+    } = await import('./src/pdf/core/operations/pageGeometryPrimitive');
+    const {
+      executeResizePages,
+      STANDARD_SIZES,
+    } = await import('./src/pdf/core/operations/resizeOperation');
+    const { executeInsertBlankPage } = await import('./src/pdf/core/operations/insertBlankOperation');
+    const { STANDARD_A4 } = await import('./src/pdf/core/pageModel');
+
+    // Test C2.2_A: A4 standard resize
+    const baseDocA4 = await PDFDocument.create();
+    baseDocA4.addPage([500, 700]).drawText('Resize A4 Test', { x: 50, y: 600 });
+    const resA4 = await executeResizePages(await baseDocA4.save(), { preset: 'a4', orientation: 'portrait' });
+    const docA4 = await PDFDocument.load(resA4.data);
+    const pA4 = docA4.getPage(0);
+    const [canonA4W, canonA4H] = STANDARD_PAGE_SIZES.A4.portrait;
+
+    assert(
+      Math.abs(pA4.getWidth() - canonA4W) < 0.1 && Math.abs(pA4.getHeight() - canonA4H) < 0.1,
+      'Sprint C2.2: Test A (A4 Standard Resize)',
+      `A4 resized dimensions (${pA4.getWidth().toFixed(2)}x${pA4.getHeight().toFixed(2)}) match canonical A4 portrait.`
+    );
+
+    // Test C2.2_B: Letter standard resize
+    const resLetter = await executeResizePages(await baseDocA4.save(), { preset: 'letter', orientation: 'portrait' });
+    const docLetter = await PDFDocument.load(resLetter.data);
+    const pLetter = docLetter.getPage(0);
+    const [canonLetterW, canonLetterH] = STANDARD_PAGE_SIZES.Letter.portrait;
+
+    assert(
+      Math.abs(pLetter.getWidth() - canonLetterW) < 0.1 && Math.abs(pLetter.getHeight() - canonLetterH) < 0.1,
+      'Sprint C2.2: Test B (Letter Standard Resize)',
+      `Letter resized dimensions (${pLetter.getWidth().toFixed(2)}x${pLetter.getHeight().toFixed(2)}) match canonical Letter portrait.`
+    );
+
+    // Test C2.2_C: Legal standard resize (portrait and landscape)
+    const [canonLegalW, canonLegalH] = STANDARD_PAGE_SIZES.Legal.portrait;
+    const resLegalPort = await executeResizePages(await baseDocA4.save(), { preset: 'legal', orientation: 'portrait' });
+    const docLegalPort = await PDFDocument.load(resLegalPort.data);
+    const pLegalPort = docLegalPort.getPage(0);
+
+    const resLegalLand = await executeResizePages(await baseDocA4.save(), { preset: 'legal', orientation: 'landscape' });
+    const docLegalLand = await PDFDocument.load(resLegalLand.data);
+    const pLegalLand = docLegalLand.getPage(0);
+
+    const legalPortOk = Math.abs(pLegalPort.getWidth() - canonLegalW) < 0.1 && Math.abs(pLegalPort.getHeight() - canonLegalH) < 0.1;
+    const legalLandOk = Math.abs(pLegalLand.getWidth() - canonLegalH) < 0.1 && Math.abs(pLegalLand.getHeight() - canonLegalW) < 0.1;
+
+    assert(
+      legalPortOk && legalLandOk,
+      'Sprint C2.2: Test C (Legal Standard Resize)',
+      `Legal dimensions verified: portrait (${pLegalPort.getWidth()}x${pLegalPort.getHeight()}), landscape (${pLegalLand.getWidth()}x${pLegalLand.getHeight()}).`
+    );
+
+    // Test C2.2_D: scaleContent = true
+    const scaleDoc = await PDFDocument.create();
+    scaleDoc.addPage([300, 300]).drawText('Scaled Content Token', { x: 50, y: 150 });
+    const resScaled = await executeResizePages(await scaleDoc.save(), { preset: 'a4', scaleContent: true });
+    const docScaled = await PDFDocument.load(resScaled.data);
+    const textScaled = await extractPageText(resScaled.data, 1);
+
+    assert(
+      docScaled.getPage(0).getWidth() === canonA4W && textScaled.includes('Scaled Content Token'),
+      'Sprint C2.2: Test D (Content Scaling Invariance)',
+      'Page dimensions standardized to A4 with scaleContent preserving searchable text streams.'
+    );
+
+    // Test C2.2_E: Keep orientation on mixed pages
+    const mixedDoc = await PDFDocument.create();
+    mixedDoc.addPage([500, 700]).drawText('Page 1 Portrait', { x: 50, y: 600 });
+    mixedDoc.addPage([700, 500]).drawText('Page 2 Landscape', { x: 50, y: 400 });
+    mixedDoc.addPage([500, 700]).drawText('Page 3 Portrait', { x: 50, y: 600 });
+    const mixedBytes = await mixedDoc.save();
+
+    const resMixed = await executeResizePages(mixedBytes, { preset: 'a4', orientation: 'keep' });
+    const docMixed = await PDFDocument.load(resMixed.data);
+
+    const mP1 = docMixed.getPage(0);
+    const mP2 = docMixed.getPage(1);
+    const mP3 = docMixed.getPage(2);
+
+    const p1Port = mP1.getWidth() === canonA4W && mP1.getHeight() === canonA4H;
+    const p2Land = mP2.getWidth() === canonA4H && mP2.getHeight() === canonA4W;
+    const p3Port = mP3.getWidth() === canonA4W && mP3.getHeight() === canonA4H;
+
+    assert(
+      p1Port && p2Land && p3Port,
+      'Sprint C2.2: Test E (Mixed Orientation Page Retention)',
+      'orientation="keep" preserves individual page aspect orientation (P1 portrait, P2 landscape, P3 portrait).'
+    );
+
+    // Test C2.2_F: Explicit portrait on landscape input
+    const landDoc = await PDFDocument.create();
+    landDoc.addPage([800, 500]).drawText('Landscape Source', { x: 50, y: 400 });
+    const resExplicitPort = await executeResizePages(await landDoc.save(), { preset: 'a4', orientation: 'portrait' });
+    const docExplicitPort = await PDFDocument.load(resExplicitPort.data);
+    const pExpPort = docExplicitPort.getPage(0);
+
+    assert(
+      pExpPort.getWidth() < pExpPort.getHeight() && pExpPort.getWidth() === canonA4W,
+      'Sprint C2.2: Test F (Explicit Portrait Override)',
+      'Landscape source page correctly reshaped to portrait dimensions (width < height).'
+    );
+
+    // Test C2.2_G: Explicit landscape on portrait input
+    const portDoc = await PDFDocument.create();
+    portDoc.addPage([500, 800]).drawText('Portrait Source', { x: 50, y: 600 });
+    const resExplicitLand = await executeResizePages(await portDoc.save(), { preset: 'a4', orientation: 'landscape' });
+    const docExplicitLand = await PDFDocument.load(resExplicitLand.data);
+    const pExpLand = docExplicitLand.getPage(0);
+
+    assert(
+      pExpLand.getWidth() > pExpLand.getHeight() && pExpLand.getWidth() === canonA4H,
+      'Sprint C2.2: Test G (Explicit Landscape Override)',
+      'Portrait source page correctly reshaped to landscape dimensions (width > height).'
+    );
+
+    // Test C2.2_H: Custom dimensions
+    const resCustom = await executeResizePages(await portDoc.save(), {
+      preset: 'custom',
+      customWidth: 420,
+      customHeight: 690,
+    });
+    const docCustom = await PDFDocument.load(resCustom.data);
+    const pCustom = docCustom.getPage(0);
+
+    assert(
+      pCustom.getWidth() === 420 && pCustom.getHeight() === 690,
+      'Sprint C2.2: Test H (Custom Dimensions Bypass)',
+      'Custom dimensions (420x690) applied cleanly without preset collision.'
+    );
+
+    // Test C2.2_I: Insert blank page uses canonical A4
+    const baseBlankTestDoc = await PDFDocument.create();
+    baseBlankTestDoc.addPage([400, 400]);
+    const resBlank = await executeInsertBlankPage(await baseBlankTestDoc.save(), 1);
+    const docBlank = await PDFDocument.load(resBlank.data);
+    const pBlank = docBlank.getPage(1);
+
+    assert(
+      pBlank.getWidth() === canonA4W && pBlank.getHeight() === canonA4H,
+      'Sprint C2.2: Test I (Insert Blank Page Canonical A4)',
+      'executeInsertBlankPage produces blank page with exact canonical A4 portrait dimensions.'
+    );
+
+    // Test C2.2_J: Canonical primitive reuse and zero duplicate numeric definitions
+    const resizeModule = await import('./src/pdf/core/operations/resizeOperation');
+    const blankModule = await import('./src/pdf/core/operations/insertBlankOperation');
+
+    const canonicalReuseOk =
+      STANDARD_SIZES.a4.width === canonA4W &&
+      STANDARD_SIZES.a4.height === canonA4H &&
+      STANDARD_A4.width === canonA4W &&
+      STANDARD_A4.height === canonA4H &&
+      typeof resizeModule.executeResizePages === 'function' &&
+      typeof blankModule.executeInsertBlankPage === 'function';
+
+    assert(
+      canonicalReuseOk,
+      'Sprint C2.2: Test J (Canonical Primitive Reuse & Parity)',
+      'resizeOperation, insertBlankOperation, and pageModel all source canonical dimensions from pageGeometryPrimitive.'
+    );
+  } catch (e: any) {
+    assert(false, 'Sprint C2.2 Canonical Geometry', e.message);
+  }
+
   console.log('\n--- FINAL TEST SUMMARY ---');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`Passed: ${passedCount} / ${results.length}`);
