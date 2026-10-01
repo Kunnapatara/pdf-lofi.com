@@ -138,6 +138,7 @@ export const CAPABILITY_REGISTRY: Record<PdfCapabilityId, PdfCapability> = {
       'redact-pdf',
       'structural-redaction',
       'digital-signature',
+      'image-watermark',
     ],
   },
 

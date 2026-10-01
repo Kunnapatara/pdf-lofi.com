@@ -26,6 +26,8 @@ import {
   StampOptions,
   executeInsertImage,
   InsertImageOptions,
+  executeImageWatermark,
+  ImageWatermarkOptions,
   executeFillForm,
   executeClearForm,
   executeFlattenForm,
@@ -265,6 +267,15 @@ export class DocumentService {
   ): Promise<LocalDocument> {
     return this.safeMutate(document, 'insertImage', (data) =>
       executeInsertImage(data, options)
+    );
+  }
+
+  async addImageWatermark(
+    document: LocalDocument,
+    options: ImageWatermarkOptions
+  ): Promise<LocalDocument> {
+    return this.safeMutate(document, 'addImageWatermark', (data) =>
+      executeImageWatermark(data, options)
     );
   }
 

@@ -29,6 +29,7 @@ import { PredefinedStampType } from '../../pdf/core/operations/stampOperation';
 import { BatesPosition, formatBatesNumber } from '../../pdf/core/operations/batesNumberOperation';
 import { StandardTextPosition, SupportedFontFamily, expandDynamicTokens, formatLocalIsoDate } from '../../pdf/core/operations/textPrimitive';
 import { DateFormat, TimeFormat, StampMode, buildStampText } from '../../pdf/core/operations/dateTimeStampOperation';
+import { VisualPlacementPreset } from '../../pdf/core/operations/visualOverlayPrimitive';
 
 export type EditSubTool =
   | 'page-numbers'
@@ -37,6 +38,7 @@ export type EditSubTool =
   | 'date-time-stamp'
   | 'page-background'
   | 'watermark'
+  | 'image-watermark'
   | 'stamps'
   | 'signature'
   | 'image'
@@ -135,6 +137,16 @@ export const EditTab: React.FC<EditTabProps> = ({
     b: 0.35,
     label: 'Charcoal',
   });
+
+  // --- Image Watermark Settings (Sprint C1.1) ---
+  const [imgWatermarkData, setImgWatermarkData] = useState<string | null>(null);
+  const [imgWatermarkWidth, setImgWatermarkWidth] = useState<number>(240);
+  const [imgWatermarkHeight, setImgWatermarkHeight] = useState<number>(140);
+  const [imgWatermarkOpacity, setImgWatermarkOpacity] = useState<number>(0.25);
+  const [imgWatermarkRotation, setImgWatermarkRotation] = useState<number>(0);
+  const [imgWatermarkPosition, setImgWatermarkPosition] = useState<VisualPlacementPreset>('center');
+  const [imgWatermarkScope, setImgWatermarkScope] = useState<'all' | 'custom'>('all');
+  const [imgWatermarkCustomRange, setImgWatermarkCustomRange] = useState<string>('1');
 
   // --- Stamp Settings ---
   const [stampType, setStampType] = useState<PredefinedStampType>('APPROVED');
@@ -483,6 +495,60 @@ export const EditTab: React.FC<EditTabProps> = ({
     }
   };
 
+  // Apply Image Watermark (Sprint C1.1 Proof-of-Reuse)
+  const handleImageWatermarkUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImgWatermarkData(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleApplyImageWatermark = async () => {
+    if (!document.data || !imgWatermarkData) return;
+    setIsProcessing(true);
+    setProcessingMsg('Embedding image watermark across pages...');
+    setErrorMsg(null);
+    setSuccessBanner(null);
+
+    try {
+      let targetPages: number[] | undefined;
+      if (imgWatermarkScope === 'custom') {
+        const parsed = parsePageRange(imgWatermarkCustomRange, document.pageCount);
+        if (!parsed.valid || parsed.pageIndices.length === 0) {
+          setErrorMsg(parsed.error || 'Invalid page range');
+          setIsProcessing(false);
+          return;
+        }
+        targetPages = parsed.pageIndices;
+      }
+
+      const isPng = imgWatermarkData.startsWith('data:image/png');
+      const updated = await documentService.addImageWatermark(document, {
+        imageData: imgWatermarkData,
+        mimeType: isPng ? 'image/png' : 'image/jpeg',
+        width: imgWatermarkWidth,
+        height: imgWatermarkHeight,
+        opacity: imgWatermarkOpacity,
+        rotationDegrees: imgWatermarkRotation,
+        positionPreset: imgWatermarkPosition,
+        targetPages,
+      });
+
+      if (updated.data) {
+        await onUpdateDocumentData(updated.data, updated.pageCount, 'Image Watermark');
+        const count = targetPages ? targetPages.length : document.pageCount;
+        setSuccessBanner(`Image watermark applied across ${count} pages.`);
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to apply image watermark');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   // Apply Stamp
   const handleApplyStamp = async () => {
     if (!document.data) return;
@@ -723,6 +789,19 @@ export const EditTab: React.FC<EditTabProps> = ({
           >
             <Stamp className="w-3.5 h-3.5" />
             <span>Watermark</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTool('image-watermark')}
+            id="tab-edit-image-watermark"
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeSubTool === 'image-watermark'
+                ? 'bg-white text-stone-900 shadow-2xs'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            <ImageIcon className="w-3.5 h-3.5 text-orange-500" />
+            <span>Image Watermark</span>
           </button>
 
           <button
@@ -1976,6 +2055,224 @@ export const EditTab: React.FC<EditTabProps> = ({
                   {watermarkText || 'SAMPLE'}
                 </span>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TOOL: IMAGE WATERMARK (Sprint C1.1 Proof-of-Reuse) */}
+      {activeSubTool === 'image-watermark' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-7 bg-white rounded-3xl border border-stone-200/90 p-6 shadow-xs space-y-4">
+            <div className="border-b border-stone-100 pb-3">
+              <h3 className="text-base font-bold text-stone-900">Image Watermark</h3>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Overlay PNG/JPEG logos and transparent graphics across all or targeted PDF pages.
+              </p>
+            </div>
+
+            {/* Image Upload Input */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-stone-700 block">Watermark Image (PNG or JPEG)</label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="file"
+                  accept="image/png, image/jpeg"
+                  onChange={handleImageWatermarkUpload}
+                  className="text-xs text-stone-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-orange-50 file:text-orange-600 hover:file:bg-orange-100 cursor-pointer"
+                />
+                {imgWatermarkData && (
+                  <span className="text-xs text-emerald-600 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Image loaded
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Dimensions */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-700 block">Width (pt)</label>
+                <input
+                  type="number"
+                  min={20}
+                  max={800}
+                  value={imgWatermarkWidth}
+                  onChange={(e) => setImgWatermarkWidth(Number(e.target.value) || 200)}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-700 block">Height (pt)</label>
+                <input
+                  type="number"
+                  min={20}
+                  max={800}
+                  value={imgWatermarkHeight}
+                  onChange={(e) => setImgWatermarkHeight(Number(e.target.value) || 120)}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white"
+                />
+              </div>
+            </div>
+
+            {/* Opacity and Rotation */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-700 block">
+                  Opacity ({Math.round(imgWatermarkOpacity * 100)}%)
+                </label>
+                <input
+                  type="range"
+                  min={0.05}
+                  max={1.0}
+                  step={0.05}
+                  value={imgWatermarkOpacity}
+                  onChange={(e) => setImgWatermarkOpacity(parseFloat(e.target.value))}
+                  className="w-full accent-orange-500 cursor-pointer"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-700 block">Rotation</label>
+                <select
+                  value={imgWatermarkRotation}
+                  onChange={(e) => setImgWatermarkRotation(Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white"
+                >
+                  <option value={0}>0° (Horizontal)</option>
+                  <option value={45}>45° (Diagonal)</option>
+                  <option value={90}>90° (Vertical)</option>
+                  <option value={180}>180° (Inverted)</option>
+                  <option value={270}>270° (Vertical CCW)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Position Preset */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-stone-700 block">Position Preset</label>
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                {(['center', 'bottom-right', 'bottom-left', 'top-right', 'top-left'] as VisualPlacementPreset[]).map(
+                  (pos) => (
+                    <button
+                      key={pos}
+                      type="button"
+                      onClick={() => setImgWatermarkPosition(pos)}
+                      className={`px-2 py-1.5 rounded-lg text-xs font-bold capitalize transition-all cursor-pointer ${
+                        imgWatermarkPosition === pos
+                          ? 'bg-stone-900 text-white shadow-2xs'
+                          : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                      }`}
+                    >
+                      {pos.replace('-', ' ')}
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+
+            {/* Target Page Scope */}
+            <div className="space-y-2 pt-2 border-t border-stone-100">
+              <label className="text-xs font-bold text-stone-700 block">Target Pages</label>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 text-xs text-stone-700 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="imgWatermarkScope"
+                    checked={imgWatermarkScope === 'all'}
+                    onChange={() => setImgWatermarkScope('all')}
+                    className="accent-orange-500"
+                  />
+                  All Pages (1 to {document.pageCount})
+                </label>
+                <label className="flex items-center gap-2 text-xs text-stone-700 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="imgWatermarkScope"
+                    checked={imgWatermarkScope === 'custom'}
+                    onChange={() => setImgWatermarkScope('custom')}
+                    className="accent-orange-500"
+                  />
+                  Custom Range
+                </label>
+              </div>
+
+              {imgWatermarkScope === 'custom' && (
+                <div className="mt-2">
+                  <input
+                    type="text"
+                    value={imgWatermarkCustomRange}
+                    onChange={(e) => setImgWatermarkCustomRange(e.target.value)}
+                    placeholder="e.g. 1-3, 5"
+                    className="w-full sm:w-64 px-3 py-1.5 rounded-xl border border-stone-300 text-xs bg-white"
+                  />
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={handleApplyImageWatermark}
+              disabled={isProcessing || !imgWatermarkData}
+              className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold text-white shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                isProcessing || !imgWatermarkData
+                  ? 'bg-stone-300 cursor-not-allowed text-stone-500'
+                  : 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/20'
+              }`}
+            >
+              {isProcessing ? (
+                <>
+                  <RotateCw className="w-4 h-4 animate-spin" />
+                  Applying Image Watermark...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  Apply Image Watermark
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Right Column: Visual Preview */}
+          <div className="lg:col-span-5 bg-stone-100 rounded-3xl border border-stone-200/90 p-6 flex flex-col justify-between">
+            <div>
+              <h4 className="text-xs font-bold text-stone-800 uppercase tracking-wider">Watermark Preview</h4>
+              <p className="text-xs text-stone-500 mt-1">Live simulation on Page 1:</p>
+
+              <div className="mt-6 mx-auto w-52 h-72 bg-white rounded-lg shadow-sm border border-stone-300 relative p-4 flex items-center justify-center overflow-hidden">
+                {/* Simulated body lines */}
+                <div className="absolute inset-x-4 top-6 space-y-2 opacity-20 pointer-events-none">
+                  <div className="h-2 bg-stone-400 rounded-sm w-3/4"></div>
+                  <div className="h-1.5 bg-stone-300 rounded-sm w-full"></div>
+                  <div className="h-1.5 bg-stone-300 rounded-sm w-5/6"></div>
+                  <div className="h-1.5 bg-stone-300 rounded-sm w-full"></div>
+                  <div className="h-1.5 bg-stone-300 rounded-sm w-2/3"></div>
+                  <div className="h-1.5 bg-stone-300 rounded-sm w-4/5"></div>
+                </div>
+
+                {imgWatermarkData ? (
+                  <img
+                    src={imgWatermarkData}
+                    alt="Watermark preview"
+                    className="max-w-[75%] max-h-[75%] object-contain pointer-events-none transition-transform"
+                    style={{
+                      opacity: imgWatermarkOpacity,
+                      transform: `rotate(${imgWatermarkRotation}deg)`,
+                    }}
+                  />
+                ) : (
+                  <div className="text-center p-4 border border-dashed border-stone-300 rounded-xl">
+                    <ImageIcon className="w-8 h-8 text-stone-300 mx-auto mb-1" />
+                    <span className="text-[10px] text-stone-400 font-medium">Upload image to preview</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 p-3 bg-white rounded-xl border border-stone-200 text-center space-y-1">
+              <span className="text-xs font-bold text-stone-700 block">100% Client-Side Overlay</span>
+              <p className="text-[11px] text-stone-500">
+                Processed locally via visualOverlayPrimitive without remote uploads.
+              </p>
             </div>
           </div>
         </div>

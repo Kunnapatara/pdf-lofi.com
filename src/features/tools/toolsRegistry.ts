@@ -360,6 +360,17 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     keywords: ['watermark', 'stamp', 'confidential', 'draft', 'overlay', 'security', 'brand'],
   },
   {
+    id: 'image-watermark',
+    name: 'Image Watermark',
+    shortDescription: 'Overlay transparent PNG or JPEG logos and image watermarks across all or selected PDF pages.',
+    category: 'edit',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'edit',
+    workspaceTab: 'edit',
+    keywords: ['image watermark', 'logo', 'watermark', 'overlay', 'transparent', 'brand', 'png', 'jpeg'],
+  },
+  {
     id: 'stamps-pdf',
     name: 'Document Stamps',
     shortDescription: 'Stamp official office badges like APPROVED, DRAFT, CONFIDENTIAL, or REVIEWED with dates.',
