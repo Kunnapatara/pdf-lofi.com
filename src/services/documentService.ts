@@ -21,6 +21,12 @@ import {
   CropMargins,
   executeResizePages,
   ResizeOptions,
+  executeScaleContent,
+  ScaleContentOptions,
+  executeFitContent,
+  FitContentOptions,
+  executeAddMargins,
+  AddMarginsOptions,
   executeRemoveBlankPages,
   executeAddStamp,
   StampOptions,
@@ -232,6 +238,33 @@ export class DocumentService {
   ): Promise<LocalDocument> {
     return this.safeMutate(document, 'resizePages', (data) =>
       executeResizePages(data, options, pageIndices)
+    );
+  }
+
+  async scaleContent(
+    document: LocalDocument,
+    options: ScaleContentOptions
+  ): Promise<LocalDocument> {
+    return this.safeMutate(document, 'scaleContent', (data) =>
+      executeScaleContent(data, options)
+    );
+  }
+
+  async fitContent(
+    document: LocalDocument,
+    options: FitContentOptions
+  ): Promise<LocalDocument> {
+    return this.safeMutate(document, 'fitContent', (data) =>
+      executeFitContent(data, options)
+    );
+  }
+
+  async addMargins(
+    document: LocalDocument,
+    options: AddMarginsOptions
+  ): Promise<LocalDocument> {
+    return this.safeMutate(document, 'addMargins', (data) =>
+      executeAddMargins(data, options)
     );
   }
 

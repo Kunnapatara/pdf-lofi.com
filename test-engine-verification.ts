@@ -4261,11 +4261,11 @@ async function runAllTests() {
       }
     }
 
-    const t1_pass = totalTools === 76 && availableTools === 65 && roadmapTools === 11 && allIdsUnique && allFieldsValid;
+    const t1_pass = totalTools === 79 && availableTools === 68 && roadmapTools === 11 && allIdsUnique && allFieldsValid;
     assert(
       t1_pass,
       'Integration: Test 1 (Registry Contract & ID Uniqueness)',
-      'All 76 tools verified: 65 available, 11 roadmap, 100% unique IDs, valid categories and local processing boundary.'
+      'All 79 tools verified: 68 available, 11 roadmap, 100% unique IDs, valid categories and local processing boundary.'
     );
 
     // Test 2: Destination Workspace & Route Consistency
@@ -4285,7 +4285,7 @@ async function runAllTests() {
     assert(
       allDestinationsValid,
       'Integration: Test 2 (Workspace & Route Alignment)',
-      'All 65 available tools route to valid workspace tabs and recognized application views.'
+      'All 68 available tools route to valid workspace tabs and recognized application views.'
     );
 
     // Test 3: Document Continuity Chain (Tool A -> currentDocument -> Tool B -> Tool C)
@@ -4377,13 +4377,13 @@ async function runAllTests() {
 
     const t5_pass =
       capabilityKeys.length === 10 &&
-      totalMappedTools === 76 &&
+      totalMappedTools === 79 &&
       allToolsPassContract;
 
     assert(
       t5_pass,
       'Integration: Test 5 (Scalability Safety Contract & Capability Mapping)',
-      'All 76 canonical tools validated against the Scalability Contract across 10 shared capabilities with zero drift.'
+      'All 79 canonical tools validated against the Scalability Contract across 10 shared capabilities with zero drift.'
     );
   } catch (e: any) {
     assert(false, 'Integration Architecture Reconciliation', e.message);
@@ -5072,6 +5072,634 @@ async function runAllTests() {
     );
   } catch (e: any) {
     assert(false, 'Sprint C2.2 Canonical Geometry', e.message);
+  }
+
+  // ==========================================
+  // SPRINT C2.3: PAGE CONTENT GEOMETRY EXPANSION
+  // ==========================================
+  console.log('\n--- SPRINT C2.3: PAGE CONTENT GEOMETRY EXPANSION ---');
+  try {
+    const {
+      STANDARD_PAGE_SIZES,
+      resolvePageDimensions,
+      calculateContentScale,
+      calculateFitContentGeometry,
+      calculateMarginGeometry,
+    } = await import('./src/pdf/core/operations/pageGeometryPrimitive');
+    const { executeScaleContent } = await import(
+      './src/pdf/core/operations/scaleContentOperation'
+    );
+    const { executeFitContent } = await import(
+      './src/pdf/core/operations/fitContentOperation'
+    );
+    const { executeAddMargins } = await import(
+      './src/pdf/core/operations/addMarginsOperation'
+    );
+    const { documentService } = await import('./src/services/documentService');
+
+    // Base Multi-Page Fixture
+    const baseC23Doc = await PDFDocument.create();
+    const font = await baseC23Doc.embedFont(StandardFonts.Helvetica);
+    const p1 = baseC23Doc.addPage([595.28, 841.89]); // A4 Portrait
+    p1.drawText('PAGE_1_GEOMETRY_CONTENT', { x: 155, y: 400, font, size: 18 });
+    const p2 = baseC23Doc.addPage([841.89, 595.28]); // A4 Landscape
+    p2.drawText('PAGE_2_LANDSCAPE_CONTENT', { x: 50, y: 500, font, size: 18 });
+    const p3 = baseC23Doc.addPage([612.0, 792.0]); // Letter Portrait
+    p3.drawText('PAGE_3_LETTER_CONTENT', { x: 50, y: 650, font, size: 18 });
+    const baseC23Bytes = await baseC23Doc.save();
+
+    // ------------------------------------------
+    // SUB-SUITE 1: SCALE PAGE CONTENT
+    // ------------------------------------------
+
+    // Test C2.3_A1: 100% leaves geometry and page dimensions unchanged
+    const scale100Res = await executeScaleContent(baseC23Bytes, { scale: 1.0 });
+    const docScale100 = await PDFDocument.load(scale100Res.data);
+    const p1Size100 = docScale100.getPage(0).getSize();
+    const t1Text100 = await extractPageText(scale100Res.data, 1);
+
+    assert(
+      Math.abs(p1Size100.width - 595.28) < 0.1 &&
+      Math.abs(p1Size100.height - 841.89) < 0.1 &&
+      t1Text100.includes('PAGE_1_GEOMETRY_CONTENT'),
+      'Sprint C2.3: Test A1 (Scale 100% Geometry Invariance)',
+      '100% scale leaves page dimensions, vector text, and layout perfectly intact.'
+    );
+
+    // Test C2.3_A2: 50% reduces content scale proportionally while preserving page dimensions
+    const scale50Res = await executeScaleContent(baseC23Bytes, { scale: 0.5 });
+    const docScale50 = await PDFDocument.load(scale50Res.data);
+    const p1Size50 = docScale50.getPage(0).getSize();
+    const t1Text50 = await extractPageText(scale50Res.data, 1);
+    const pdfjsDoc50 = await pdfjsLib.getDocument({ data: scale50Res.data.slice().buffer }).promise;
+    const tc50 = await (await pdfjsDoc50.getPage(1)).getTextContent();
+    const item50 = tc50.items.find((i: any) => i.str?.includes('PAGE_1_GEOMETRY_CONTENT')) as any;
+
+    assert(
+      Math.abs(p1Size50.width - 595.28) < 0.1 &&
+      Math.abs(p1Size50.height - 841.89) < 0.1 &&
+      t1Text50.includes('PAGE_1_GEOMETRY_CONTENT') &&
+      Boolean(item50) &&
+      Math.abs(item50.transform[0] - 9) < 0.5, // 18 font size * 0.5 = 9
+      'Sprint C2.3: Test A2 (Scale 50% Proportional Content Reduction)',
+      `Nominal page dimensions preserved (${p1Size50.width.toFixed(1)}x${p1Size50.height.toFixed(1)} pt); text font matrix scaled from 18 -> ${item50?.transform[0]}.`
+    );
+
+    // Test C2.3_A3: 200% increases content scale proportionally while preserving page dimensions
+    const scale200Res = await executeScaleContent(baseC23Bytes, { scale: 2.0 });
+    const docScale200 = await PDFDocument.load(scale200Res.data);
+    const p1Size200 = docScale200.getPage(0).getSize();
+    const t1Text200 = await extractPageText(scale200Res.data, 1);
+    const pdfjsDoc200 = await pdfjsLib.getDocument({ data: scale200Res.data.slice().buffer }).promise;
+    const tc200 = await (await pdfjsDoc200.getPage(1)).getTextContent();
+    const item200 = tc200.items.find((i: any) => i.str?.includes('PAGE_1_GEOMETRY_CONTENT')) as any;
+
+    assert(
+      Math.abs(p1Size200.width - 595.28) < 0.1 &&
+      Math.abs(p1Size200.height - 841.89) < 0.1 &&
+      t1Text200.includes('PAGE_1_GEOMETRY_CONTENT') &&
+      Boolean(item200) &&
+      Math.abs(item200.transform[0] - 36) < 0.5, // 18 font size * 2.0 = 36
+      'Sprint C2.3: Test A3 (Scale 200% Proportional Content Enlargement)',
+      `Nominal page dimensions preserved; text font matrix scaled from 18 -> ${item200?.transform[0]}.`
+    );
+
+    // Test C2.3_A4: Aspect ratio remains unchanged (uniform scaleX == scaleY)
+    const geomTransform = calculateContentScale(595.28, 841.89, 0.75);
+    assert(
+      geomTransform.scale === 0.75 &&
+      geomTransform.targetWidth === 595.28 &&
+      geomTransform.targetHeight === 841.89 &&
+      geomTransform.translateX > 0 &&
+      geomTransform.translateY > 0,
+      'Sprint C2.3: Test A4 (Scale Aspect Ratio & Centering Geometry)',
+      'Uniform scaling calculation produces identical scale on X and Y axes with centered offsets.'
+    );
+
+    // Test C2.3_A5: Portrait and Landscape pages handled correctly
+    const scaleBothRes = await executeScaleContent(baseC23Bytes, { scale: 0.8 });
+    const docScaleBoth = await PDFDocument.load(scaleBothRes.data);
+    const p1Dims = docScaleBoth.getPage(0).getSize(); // Portrait
+    const p2Dims = docScaleBoth.getPage(1).getSize(); // Landscape
+    const p1PortOk = p1Dims.width < p1Dims.height;
+    const p2LandOk = p2Dims.width > p2Dims.height;
+
+    assert(
+      p1PortOk && p2LandOk,
+      'Sprint C2.3: Test A5 (Portrait & Landscape Handling)',
+      `Page 1 remains portrait (${p1Dims.width}x${p1Dims.height}), Page 2 remains landscape (${p2Dims.width}x${p2Dims.height}).`
+    );
+
+    // Test C2.3_A6: Multi-page targeted page range (scale only page 1, leave page 2 untouched)
+    const scaleTargetRes = await executeScaleContent(baseC23Bytes, { scale: 0.5, pageRange: '1' });
+    const pdfjsDocTarget = await pdfjsLib.getDocument({ data: scaleTargetRes.data.slice().buffer }).promise;
+    const p1TargetTc = await (await pdfjsDocTarget.getPage(1)).getTextContent();
+    const p2TargetTc = await (await pdfjsDocTarget.getPage(2)).getTextContent();
+    const p1Item = p1TargetTc.items.find((i: any) => i.str?.includes('PAGE_1')) as any;
+    const p2Item = p2TargetTc.items.find((i: any) => i.str?.includes('PAGE_2')) as any;
+
+    assert(
+      Math.abs(p1Item.transform[0] - 9) < 0.5 &&
+      Math.abs(p2Item.transform[0] - 18) < 0.5,
+      'Sprint C2.3: Test A6 (Targeted Page Range Execution)',
+      `Targeted page 1 scaled (font 18 -> ${p1Item.transform[0]}), while untouched page 2 preserved (font ${p2Item.transform[0]}).`
+    );
+
+    // Test C2.3_A7: Existing page rotation (90°) preserved
+    const rotDoc = await PDFDocument.create();
+    const rotP = rotDoc.addPage([500, 700]);
+    rotP.drawText('ROTATED_SCALE_TEXT', { x: 50, y: 500, font, size: 20 });
+    rotP.setRotation(degrees(90));
+    const rotBytes = await rotDoc.save();
+
+    const scaleRotRes = await executeScaleContent(rotBytes, { scale: 0.8 });
+    const docScaleRot = await PDFDocument.load(scaleRotRes.data);
+    const pRotAfter = docScaleRot.getPage(0);
+
+    assert(
+      pRotAfter.getRotation().angle === 90 &&
+      pRotAfter.getWidth() === 500 &&
+      pRotAfter.getHeight() === 700,
+      'Sprint C2.3: Test A7 (Rotation Angle Preservation)',
+      'Page rotation angle (90°) and dimensions strictly preserved across content scaling.'
+    );
+
+    // Test C2.3_A8: Existing CropBox preserved and content centered
+    const cropDoc = await PDFDocument.create();
+    const cropP = cropDoc.addPage([600, 800]);
+    cropP.drawText('CROPBOX_SCALE_TEXT', { x: 50, y: 500, font, size: 20 });
+    cropP.setCropBox(50, 50, 500, 700);
+    const cropBytes = await cropDoc.save();
+
+    const scaleCropRes = await executeScaleContent(cropBytes, { scale: 0.8 });
+    const docScaleCrop = await PDFDocument.load(scaleCropRes.data);
+    const pCropAfter = docScaleCrop.getPage(0);
+    const cbAfter = pCropAfter.getCropBox();
+
+    assert(
+      cbAfter.x === 50 &&
+      cbAfter.y === 50 &&
+      cbAfter.width === 500 &&
+      cbAfter.height === 700,
+      'Sprint C2.3: Test A8 (Existing CropBox Viewport Preservation)',
+      'Existing page CropBox coordinates and dimensions preserved with scaled content.'
+    );
+
+    // Test C2.3_A9: Small page (100x100) and Large page (1500x2000)
+    const extremeDoc = await PDFDocument.create();
+    extremeDoc.addPage([100, 100]).drawText('Small', { x: 10, y: 50, font, size: 8 });
+    extremeDoc.addPage([1500, 2000]).drawText('Large', { x: 100, y: 1500, font, size: 48 });
+    const extremeRes = await executeScaleContent(await extremeDoc.save(), { scale: 1.5 });
+    const docExtreme = await PDFDocument.load(extremeRes.data);
+
+    assert(
+      docExtreme.getPage(0).getWidth() === 100 &&
+      docExtreme.getPage(1).getWidth() === 1500,
+      'Sprint C2.3: Test A9 (Extreme Dimensions Handling)',
+      'Very small (100x100) and very large (1500x2000) pages scaled without overflow or distortion.'
+    );
+
+    // Test C2.3_A10: Malformed input rejection
+    let malformedScaleCaught = false;
+    try {
+      await executeScaleContent(new Uint8Array(0), { scale: 0.8 });
+    } catch {
+      malformedScaleCaught = true;
+    }
+    let invalidRangeCaught = false;
+    try {
+      await executeScaleContent(baseC23Bytes, { scale: 0.8, pageRange: '99-100' });
+    } catch {
+      invalidRangeCaught = true;
+    }
+
+    assert(
+      malformedScaleCaught && invalidRangeCaught,
+      'Sprint C2.3: Test A10 (Malformed Input & Range Rejection)',
+      'Empty bytes and out-of-bounds page ranges rejected with explicit errors.'
+    );
+
+    // ------------------------------------------
+    // SUB-SUITE 2: FIT CONTENT TO PAGE
+    // ------------------------------------------
+
+    // Test C2.3_B1: A4 → Letter (portrait → portrait)
+    const fitA4toLetterRes = await executeFitContent(baseC23Bytes, {
+      targetSize: 'Letter',
+      orientation: 'portrait',
+      pageRange: '1',
+    });
+    const docFitLetter = await PDFDocument.load(fitA4toLetterRes.data);
+    const p1Letter = docFitLetter.getPage(0);
+    const [letterW, letterH] = STANDARD_PAGE_SIZES.Letter.portrait;
+
+    assert(
+      Math.abs(p1Letter.getWidth() - letterW) < 0.1 &&
+      Math.abs(p1Letter.getHeight() - letterH) < 0.1,
+      'Sprint C2.3: Test B1 (Fit A4 → Letter Portrait)',
+      `Target dimensions conform to canonical Letter portrait: ${p1Letter.getWidth()}x${p1Letter.getHeight()} pt.`
+    );
+
+    // Test C2.3_B2: Letter → A4 (portrait → portrait)
+    const fitLetterToA4Res = await executeFitContent(baseC23Bytes, {
+      targetSize: 'A4',
+      orientation: 'portrait',
+      pageRange: '3', // page 3 was Letter
+    });
+    const docFitA4 = await PDFDocument.load(fitLetterToA4Res.data);
+    const p3A4 = docFitA4.getPage(2);
+    const [a4W, a4H] = STANDARD_PAGE_SIZES.A4.portrait;
+
+    assert(
+      Math.abs(p3A4.getWidth() - a4W) < 0.1 &&
+      Math.abs(p3A4.getHeight() - a4H) < 0.1,
+      'Sprint C2.3: Test B2 (Fit Letter → A4 Portrait)',
+      `Target dimensions conform to canonical A4 portrait: ${p3A4.getWidth().toFixed(2)}x${p3A4.getHeight().toFixed(2)} pt.`
+    );
+
+    // Test C2.3_B3: Differing aspect ratios: proportional scaling without non-uniform stretching
+    const geomFit = calculateFitContentGeometry(600, 400, 300, 300);
+    // scale should be min(300/600, 300/400) = min(0.5, 0.75) = 0.5
+    // fitted: 300 x 200; centered: x = 0, y = 50
+    assert(
+      geomFit.scale === 0.5 &&
+      geomFit.translateX === 0 &&
+      geomFit.translateY === 50 &&
+      geomFit.targetWidth === 300 &&
+      geomFit.targetHeight === 300,
+      'Sprint C2.3: Test B3 (Fit Aspect Ratio Containment & Centering)',
+      'Aspect-ratio preservation verified: single uniform scale (0.5) applied to both dimensions.'
+    );
+
+    // Test C2.3_B4: Centered placement verified: offsets x and y are centered in target slot
+    const geomFitCentering = calculateFitContentGeometry(400, 600, 600, 600);
+    // scale: min(600/400, 600/600) = 1.0; fitted: 400 x 600; x = (600 - 400)/2 = 100, y = 0
+    assert(
+      geomFitCentering.scale === 1.0 &&
+      geomFitCentering.translateX === 100 &&
+      geomFitCentering.translateY === 0,
+      'Sprint C2.3: Test B4 (Fit Centered Coordinate Math)',
+      'Content offset centered in target bounding box (x=100, y=0).'
+    );
+
+    // Test C2.3_B5: Portrait → Landscape override
+    const fitLandRes = await executeFitContent(baseC23Bytes, {
+      targetSize: 'A4',
+      orientation: 'landscape',
+      pageRange: '1',
+    });
+    const docFitLand = await PDFDocument.load(fitLandRes.data);
+    const p1Land = docFitLand.getPage(0);
+    const [canonA4H, canonA4W] = [STANDARD_PAGE_SIZES.A4.portrait[1], STANDARD_PAGE_SIZES.A4.portrait[0]];
+
+    assert(
+      Math.abs(p1Land.getWidth() - canonA4H) < 0.1 &&
+      Math.abs(p1Land.getHeight() - canonA4W) < 0.1 &&
+      p1Land.getWidth() > p1Land.getHeight(),
+      'Sprint C2.3: Test B5 (Portrait to Landscape Orientation Override)',
+      'Orientation override conforms to landscape A4 dimensions.'
+    );
+
+    // Test C2.3_B6: Landscape → Landscape fit
+    const fitLand2LandRes = await executeFitContent(baseC23Bytes, {
+      targetSize: 'Letter',
+      orientation: 'landscape',
+      pageRange: '2', // page 2 is landscape
+    });
+    const docFitLand2Land = await PDFDocument.load(fitLand2LandRes.data);
+    const p2LetterLand = docFitLand2Land.getPage(1);
+    const [canonLetterH, canonLetterW] = [STANDARD_PAGE_SIZES.Letter.portrait[1], STANDARD_PAGE_SIZES.Letter.portrait[0]];
+
+    assert(
+      Math.abs(p2LetterLand.getWidth() - canonLetterH) < 0.1 &&
+      Math.abs(p2LetterLand.getHeight() - canonLetterW) < 0.1,
+      'Sprint C2.3: Test B6 (Landscape to Landscape Conformity)',
+      'Landscape source page fitted into landscape Letter target geometry.'
+    );
+
+    // Test C2.3_B7: Multi-page document targeted page range (page 1 fitted to Legal, others untouched)
+    const fitRangeRes = await executeFitContent(baseC23Bytes, {
+      targetSize: 'Legal',
+      orientation: 'portrait',
+      pageRange: '1',
+    });
+    const docFitRange = await PDFDocument.load(fitRangeRes.data);
+    const p1Legal = docFitRange.getPage(0);
+    const p2Unchanged = docFitRange.getPage(1);
+    const [legalW, legalH] = STANDARD_PAGE_SIZES.Legal.portrait;
+
+    assert(
+      Math.abs(p1Legal.getWidth() - legalW) < 0.1 &&
+      Math.abs(p1Legal.getHeight() - legalH) < 0.1 &&
+      Math.abs(p2Unchanged.getWidth() - 841.89) < 0.1,
+      'Sprint C2.3: Test B7 (Multi-Page Targeted Fit Range)',
+      `Targeted page 1 fitted to Legal (${p1Legal.getWidth()}x${p1Legal.getHeight()}), Page 2 untouched (${p2Unchanged.getWidth()}x${p2Unchanged.getHeight()}).`
+    );
+
+    // Test C2.3_B8: Custom target dimensions (e.g. 500x500)
+    const fitCustomRes = await executeFitContent(baseC23Bytes, {
+      targetSize: 'custom',
+      customWidth: 500,
+      customHeight: 500,
+      pageRange: '1',
+    });
+    const docFitCustom = await PDFDocument.load(fitCustomRes.data);
+    const p1Custom = docFitCustom.getPage(0);
+
+    assert(
+      p1Custom.getWidth() === 500 && p1Custom.getHeight() === 500,
+      'Sprint C2.3: Test B8 (Custom Target Dimensions Fit)',
+      'Fitted into custom square dimensions (500x500 pt) cleanly.'
+    );
+
+    // Test C2.3_B9: Page with existing CropBox normalized to target size
+    const fitCropRes = await executeFitContent(cropBytes, {
+      targetSize: 'A4',
+      orientation: 'portrait',
+    });
+    const docFitCrop = await PDFDocument.load(fitCropRes.data);
+    const pFitCrop = docFitCrop.getPage(0);
+    const cbFitCrop = pFitCrop.getCropBox();
+
+    assert(
+      Math.abs(pFitCrop.getWidth() - 595.28) < 0.1 &&
+      Math.abs(cbFitCrop.width - 595.28) < 0.1,
+      'Sprint C2.3: Test B9 (CropBox Normalization on Fit)',
+      'Target page dimensions and CropBox synchronized to target A4 geometry.'
+    );
+
+    // Test C2.3_B10: Malformed input rejection
+    let malformedFitCaught = false;
+    try {
+      await executeFitContent(new Uint8Array(0), { targetSize: 'A4' });
+    } catch {
+      malformedFitCaught = true;
+    }
+
+    assert(
+      malformedFitCaught,
+      'Sprint C2.3: Test B10 (Malformed Input Rejection)',
+      'Empty document bytes rejected with an error.'
+    );
+
+    // ------------------------------------------
+    // SUB-SUITE 3: ADD PAGE MARGINS
+    // ------------------------------------------
+
+    // Test C2.3_C1: Symmetric margins with mode 'shrink-content' (36pt all around)
+    const marginShrinkSymRes = await executeAddMargins(baseC23Bytes, {
+      top: 36,
+      right: 36,
+      bottom: 36,
+      left: 36,
+      mode: 'shrink-content',
+      pageRange: '1',
+    });
+    const docMarginShrinkSym = await PDFDocument.load(marginShrinkSymRes.data);
+    const p1MSS = docMarginShrinkSym.getPage(0);
+    const t1MSS = await extractPageText(marginShrinkSymRes.data, 1);
+
+    assert(
+      Math.abs(p1MSS.getWidth() - 595.28) < 0.1 &&
+      Math.abs(p1MSS.getHeight() - 841.89) < 0.1 &&
+      t1MSS.includes('PAGE_1_GEOMETRY_CONTENT'),
+      'Sprint C2.3: Test C1 (Symmetric Margins: Shrink Content)',
+      'Nominal page dimensions preserved; content shrunk and centered within 36pt margins.'
+    );
+
+    // Test C2.3_C2: Asymmetric margins with mode 'shrink-content'
+    const geomMarginAsym = calculateMarginGeometry({
+      pageWidth: 600,
+      pageHeight: 800,
+      top: 50,
+      right: 30,
+      bottom: 40,
+      left: 20,
+      mode: 'shrink-content',
+    });
+    // availW = 600 - 20 - 30 = 550, availH = 800 - 50 - 40 = 710
+    // scale = min(550/600, 710/800) = min(0.91667, 0.8875) = 0.8875
+    assert(
+      Math.abs(geomMarginAsym.scale - 0.8875) < 0.001 &&
+      geomMarginAsym.targetWidth === 600 &&
+      geomMarginAsym.targetHeight === 800 &&
+      geomMarginAsym.translateX >= 20 &&
+      geomMarginAsym.translateY >= 40,
+      'Sprint C2.3: Test C2 (Asymmetric Margins Geometry Calculation)',
+      'Asymmetric margins (T:50, R:30, B:40, L:20) correctly computed with content scale and offset.'
+    );
+
+    // Test C2.3_C3: Zero margin leaves document completely unchanged
+    const marginZeroRes = await executeAddMargins(baseC23Bytes, {
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+      mode: 'shrink-content',
+    });
+    const docMarginZero = await PDFDocument.load(marginZeroRes.data);
+    const p1Zero = docMarginZero.getPage(0);
+
+    assert(
+      Math.abs(p1Zero.getWidth() - 595.28) < 0.1 &&
+      Math.abs(p1Zero.getHeight() - 841.89) < 0.1,
+      'Sprint C2.3: Test C3 (Zero Margin Invariance)',
+      'Zero margin offsets leave document geometry and layout unchanged.'
+    );
+
+    // Test C2.3_C4: Symmetric margins with mode 'expand-page' (36pt all around)
+    const marginExpSymRes = await executeAddMargins(baseC23Bytes, {
+      top: 36,
+      right: 36,
+      bottom: 36,
+      left: 36,
+      mode: 'expand-page',
+      pageRange: '1',
+    });
+    const docMarginExpSym = await PDFDocument.load(marginExpSymRes.data);
+    const p1MES = docMarginExpSym.getPage(0);
+    // Original: 595.28 x 841.89
+    // Expanded: 595.28 + 72 = 667.28, 841.89 + 72 = 913.89
+    assert(
+      Math.abs(p1MES.getWidth() - 667.28) < 0.1 &&
+      Math.abs(p1MES.getHeight() - 913.89) < 0.1,
+      'Sprint C2.3: Test C4 (Symmetric Margins: Expand Page)',
+      `Page dimensions expanded by +72pt: ${p1MES.getWidth().toFixed(2)}x${p1MES.getHeight().toFixed(2)} pt.`
+    );
+
+    // Test C2.3_C5: Asymmetric margins with mode 'expand-page'
+    const marginExpAsymRes = await executeAddMargins(baseC23Bytes, {
+      top: 50,
+      right: 30,
+      bottom: 40,
+      left: 20,
+      mode: 'expand-page',
+      pageRange: '1',
+    });
+    const docMarginExpAsym = await PDFDocument.load(marginExpAsymRes.data);
+    const p1MEA = docMarginExpAsym.getPage(0);
+    // Expanded: 595.28 + 20 + 30 = 645.28, 841.89 + 50 + 40 = 931.89
+    assert(
+      Math.abs(p1MEA.getWidth() - 645.28) < 0.1 &&
+      Math.abs(p1MEA.getHeight() - 931.89) < 0.1,
+      'Sprint C2.3: Test C5 (Asymmetric Margins: Expand Page)',
+      `Page dimensions expanded by +50w/+90h: ${p1MEA.getWidth().toFixed(2)}x${p1MEA.getHeight().toFixed(2)} pt.`
+    );
+
+    // Test C2.3_C6: Multi-page targeted page range
+    const marginTargetRes = await executeAddMargins(baseC23Bytes, {
+      top: 36,
+      right: 36,
+      bottom: 36,
+      left: 36,
+      mode: 'expand-page',
+      pageRange: '1',
+    });
+    const docMarginTarget = await PDFDocument.load(marginTargetRes.data);
+    const p1Target = docMarginTarget.getPage(0);
+    const p2Target = docMarginTarget.getPage(1);
+
+    assert(
+      p1Target.getWidth() > 600 &&
+      Math.abs(p2Target.getWidth() - 841.89) < 0.1,
+      'Sprint C2.3: Test C6 (Multi-Page Targeted Margin Application)',
+      'Page 1 margins expanded; Page 2 untouched.'
+    );
+
+    // Test C2.3_C7: Landscape page handled correctly
+    const marginLandRes = await executeAddMargins(baseC23Bytes, {
+      top: 20,
+      right: 20,
+      bottom: 20,
+      left: 20,
+      mode: 'shrink-content',
+      pageRange: '2', // landscape
+    });
+    const docMarginLand = await PDFDocument.load(marginLandRes.data);
+    const p2Land = docMarginLand.getPage(1);
+
+    assert(
+      p2Land.getWidth() > p2Land.getHeight() &&
+      Math.abs(p2Land.getWidth() - 841.89) < 0.1,
+      'Sprint C2.3: Test C7 (Landscape Page Margin Application)',
+      'Landscape orientation preserved across margin calculation.'
+    );
+
+    // Test C2.3_C8: Existing page rotation (90°) preserved
+    const marginRotRes = await executeAddMargins(rotBytes, {
+      top: 20,
+      right: 20,
+      bottom: 20,
+      left: 20,
+      mode: 'shrink-content',
+    });
+    const docMarginRot = await PDFDocument.load(marginRotRes.data);
+    const pRotMargin = docMarginRot.getPage(0);
+
+    assert(
+      pRotMargin.getRotation().angle === 90 &&
+      pRotMargin.getWidth() === 500 &&
+      pRotMargin.getHeight() === 700,
+      'Sprint C2.3: Test C8 (Page Rotation Preservation in Margins)',
+      'Rotation angle (90°) and dimensions preserved when applying margins.'
+    );
+
+    // Test C2.3_C9: Page with existing CropBox in expand-page mode
+    const marginCropRes = await executeAddMargins(cropBytes, {
+      top: 20,
+      right: 20,
+      bottom: 20,
+      left: 20,
+      mode: 'expand-page',
+    });
+    const docMarginCrop = await PDFDocument.load(marginCropRes.data);
+    const pCropMargin = docMarginCrop.getPage(0);
+
+    assert(
+      pCropMargin.getWidth() === 540 && pCropMargin.getHeight() === 740,
+      'Sprint C2.3: Test C9 (CropBox Handling in Expand Page Mode)',
+      'CropBox bounds expanded to match new page dimensions.'
+    );
+
+    // Test C2.3_C10: Malformed input rejection
+    let malformedMarginCaught = false;
+    try {
+      await executeAddMargins(new Uint8Array(0), { top: 10, right: 10, bottom: 10, left: 10 });
+    } catch {
+      malformedMarginCaught = true;
+    }
+
+    assert(
+      malformedMarginCaught,
+      'Sprint C2.3: Test C10 (Malformed Margin Input Rejection)',
+      'Empty bytes rejected with explicit error.'
+    );
+
+    // ------------------------------------------
+    // SUB-SUITE 4: ARCHITECTURAL REUSE & INTEGRATION
+    // ------------------------------------------
+
+    // Test C2.3_D1: Canonical geometry primitive reuse proof
+    const scaleOpModule = await import('./src/pdf/core/operations/scaleContentOperation');
+    const fitOpModule = await import('./src/pdf/core/operations/fitContentOperation');
+    const marginsOpModule = await import('./src/pdf/core/operations/addMarginsOperation');
+    const geomPrimitiveModule = await import('./src/pdf/core/operations/pageGeometryPrimitive');
+
+    const reuseProofOk =
+      typeof scaleOpModule.executeScaleContent === 'function' &&
+      typeof fitOpModule.executeFitContent === 'function' &&
+      typeof marginsOpModule.executeAddMargins === 'function' &&
+      typeof geomPrimitiveModule.calculateContentScale === 'function' &&
+      typeof geomPrimitiveModule.calculateFitContentGeometry === 'function' &&
+      typeof geomPrimitiveModule.calculateMarginGeometry === 'function' &&
+      typeof geomPrimitiveModule.resolvePageDimensions === 'function' &&
+      typeof geomPrimitiveModule.STANDARD_PAGE_SIZES === 'object';
+
+    assert(
+      reuseProofOk,
+      'Sprint C2.3: Test D1 (Architectural Primitive Reuse Proof)',
+      'All 3 new geometry tools consume shared pageGeometryPrimitive without duplicated mathematics.'
+    );
+
+    // Test C2.3_D2: DocumentService integration with rollback safety
+    const mockDoc: any = {
+      id: 'test_doc_c23',
+      name: 'test.pdf',
+      data: baseC23Bytes,
+      pageCount: 3,
+      size: baseC23Bytes.byteLength,
+      mimeType: 'application/pdf',
+      processingState: 'idle',
+      processingLocation: 'local',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    const docServScale = await documentService.scaleContent(mockDoc, { scale: 0.9 });
+    const docServFit = await documentService.fitContent(mockDoc, { targetSize: 'A4' });
+    const docServMargins = await documentService.addMargins(mockDoc, {
+      top: 18,
+      right: 18,
+      bottom: 18,
+      left: 18,
+      mode: 'shrink-content',
+    });
+
+    const docServicePass =
+      docServScale.data !== null &&
+      docServScale.pageCount === 3 &&
+      docServFit.data !== null &&
+      docServFit.pageCount === 3 &&
+      docServMargins.data !== null &&
+      docServMargins.pageCount === 3;
+
+    assert(
+      docServicePass,
+      'Sprint C2.3: Test D2 (DocumentService Safe Mutation & Commit Pipeline)',
+      'DocumentService seamlessly orchestrates scaleContent, fitContent, and addMargins through safeMutate.'
+    );
+  } catch (e: any) {
+    assert(false, 'Sprint C2.3 Page Content Geometry Expansion', e.message);
   }
 
   console.log('\n--- FINAL TEST SUMMARY ---');

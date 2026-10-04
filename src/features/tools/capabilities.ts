@@ -79,11 +79,11 @@ export const CAPABILITY_REGISTRY: Record<PdfCapabilityId, PdfCapability> = {
   'page-geometry': {
     id: 'page-geometry',
     name: 'Page Geometry & Imposition',
-    description: 'CropBox margin adjustments, standard dimensions standardization (A4/Letter/Legal), N-Up, and booklet imposition.',
+    description: 'CropBox margin adjustments, standard dimensions standardization (A4/Letter/Legal), N-Up, booklet imposition, content scaling, fitting, and page margins.',
     targetWorkspace: 'organize',
     sharedPrimitives: [
-      'pageGeometryPrimitive (resolvePageDimensions, calculateAspectFit, calculateSlotGrid, safeEmbedPage, STANDARD_PAGE_SIZES)',
-      'pdfLibEngine (embedPage, setCropBox, setMediaBox, scale)',
+      'pageGeometryPrimitive (resolvePageDimensions, calculateAspectFit, calculateSlotGrid, safeEmbedPage, calculateContentScale, calculateFitContentGeometry, calculateMarginGeometry, STANDARD_PAGE_SIZES)',
+      'pdfLibEngine (embedPage, setCropBox, setMediaBox, scale, scaleContent, translateContent)',
     ],
     reuseLevel: 'HIGH_REUSE',
     mutationModel: 'mutates_document',
@@ -92,6 +92,9 @@ export const CAPABILITY_REGISTRY: Record<PdfCapabilityId, PdfCapability> = {
       'resize-pdf',
       'n-up-pdf',
       'booklet-pdf',
+      'scale-page-content',
+      'fit-content-to-page',
+      'add-page-margins',
     ],
   },
 

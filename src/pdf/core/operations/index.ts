@@ -44,3 +44,6 @@ export * from './batchRangeExportOperation';
 export * from './visualOverlayPrimitive';
 export * from './imageWatermarkOperation';
 export * from './pageGeometryPrimitive';
+export * from './scaleContentOperation';
+export * from './fitContentOperation';
+export * from './addMarginsOperation';

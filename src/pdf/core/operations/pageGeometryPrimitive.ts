@@ -222,3 +222,137 @@ export async function safeEmbedPage(
   }
   return targetDoc.embedPage(sourcePage);
 }
+
+export interface ContentTransformGeometry {
+  scale: number;
+  translateX: number;
+  translateY: number;
+  targetWidth: number;
+  targetHeight: number;
+}
+
+/**
+ * Computes proportional content scaling while preserving nominal page dimensions.
+ * Centers the scaled content within the original page boundaries.
+ */
+export function calculateContentScale(
+  pageWidth: number,
+  pageHeight: number,
+  scaleFactor: number,
+  originX = 0,
+  originY = 0
+): ContentTransformGeometry {
+  const safeScale = Math.max(0.01, Math.min(scaleFactor, 100.0));
+  const centerX = originX + pageWidth / 2;
+  const centerY = originY + pageHeight / 2;
+  const translateX = (1 - safeScale) * centerX;
+  const translateY = (1 - safeScale) * centerY;
+
+  return {
+    scale: safeScale,
+    translateX,
+    translateY,
+    targetWidth: pageWidth,
+    targetHeight: pageHeight,
+  };
+}
+
+/**
+ * Computes proportional scaling and centering to fit source content into target page geometry.
+ * Preserves aspect ratio without non-uniform stretching.
+ */
+export function calculateFitContentGeometry(
+  srcWidth: number,
+  srcHeight: number,
+  targetWidth: number,
+  targetHeight: number,
+  srcOriginX = 0,
+  srcOriginY = 0
+): ContentTransformGeometry {
+  const fit = calculateAspectFit({
+    srcWidth,
+    srcHeight,
+    targetWidth,
+    targetHeight,
+  });
+
+  const targetCenterX = targetWidth / 2;
+  const targetCenterY = targetHeight / 2;
+  const srcCenterX = srcOriginX + srcWidth / 2;
+  const srcCenterY = srcOriginY + srcHeight / 2;
+
+  const translateX = targetCenterX - fit.scale * srcCenterX;
+  const translateY = targetCenterY - fit.scale * srcCenterY;
+
+  return {
+    scale: fit.scale,
+    translateX,
+    translateY,
+    targetWidth,
+    targetHeight,
+  };
+}
+
+export interface MarginGeometryOptions {
+  pageWidth: number;
+  pageHeight: number;
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+  mode?: 'shrink-content' | 'expand-page';
+  originX?: number;
+  originY?: number;
+}
+
+/**
+ * Computes geometry transformation to apply margins around existing page content.
+ * - 'shrink-content': Keeps nominal page dimensions, scales and translates content to leave requested margins.
+ * - 'expand-page': Preserves 100% content scale, expands outer page dimensions by requested margins.
+ */
+export function calculateMarginGeometry(options: MarginGeometryOptions): ContentTransformGeometry {
+  const {
+    pageWidth,
+    pageHeight,
+    top,
+    right,
+    bottom,
+    left,
+    mode = 'shrink-content',
+    originX = 0,
+    originY = 0,
+  } = options;
+
+  const safeTop = Math.max(0, top);
+  const safeRight = Math.max(0, right);
+  const safeBottom = Math.max(0, bottom);
+  const safeLeft = Math.max(0, left);
+
+  if (mode === 'expand-page') {
+    return {
+      scale: 1.0,
+      translateX: originX + safeLeft,
+      translateY: originY + safeBottom,
+      targetWidth: pageWidth + safeLeft + safeRight,
+      targetHeight: pageHeight + safeTop + safeBottom,
+    };
+  }
+
+  // mode === 'shrink-content'
+  const availWidth = Math.max(10, pageWidth - safeLeft - safeRight);
+  const availHeight = Math.max(10, pageHeight - safeTop - safeBottom);
+  const scale = Math.min(availWidth / pageWidth, availHeight / pageHeight);
+  const scaledW = pageWidth * scale;
+  const scaledH = pageHeight * scale;
+  const translateX = originX + safeLeft + (availWidth - scaledW) / 2 - (1 - scale) * originX;
+  const translateY = originY + safeBottom + (availHeight - scaledH) / 2 - (1 - scale) * originY;
+
+  return {
+    scale,
+    translateX,
+    translateY,
+    targetWidth: pageWidth,
+    targetHeight: pageHeight,
+  };
+}
+

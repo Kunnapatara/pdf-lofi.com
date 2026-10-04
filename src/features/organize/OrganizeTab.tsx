@@ -26,6 +26,9 @@ import {
   Bookmark,
   Hash,
   FileOutput,
+  Scaling,
+  Expand,
+  Sliders,
 } from 'lucide-react';
 import { LocalDocument, DocumentPageInfo } from '../../types/pdf';
 import { generatePageThumbnail } from '../../pdf/rendering/thumbnailService';
@@ -33,6 +36,7 @@ import { documentService } from '../../services/documentService';
 import { triggerLocalDownload } from '../../pdf/export/exportService';
 import { ProcessingBadge } from '../../components/status/ProcessingBadge';
 import { CropMargins } from '../../pdf/core/operations/cropOperation';
+import { StandardPaperSizeName } from '../../pdf/core/operations/pageGeometryPrimitive';
 import { StandardPageSize } from '../../pdf/core/operations/resizeOperation';
 import { NUpLayout } from '../../pdf/core/operations/nUpOperation';
 import { SplitPart } from '../../pdf/core/operations/splitEveryNOperation';
@@ -121,6 +125,24 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
   const [batchExportPrefix, setBatchExportPrefix] = useState<string>('');
   const [batchExportResults, setBatchExportResults] = useState<BatchExportPart[] | null>(null);
   const [batchExportError, setBatchExportError] = useState<string | null>(null);
+
+  // Modals for Scale Page Content, Fit Content to Page, and Add Page Margins (Sprint C2.3)
+  const [showScaleModal, setShowScaleModal] = useState(false);
+  const [scalePercent, setScalePercent] = useState<number>(80);
+  const [scaleRange, setScaleRange] = useState<string>('');
+
+  const [showFitModal, setShowFitModal] = useState(false);
+  const [fitTargetSize, setFitTargetSize] = useState<StandardPaperSizeName>('A4');
+  const [fitOrientation, setFitOrientation] = useState<'portrait' | 'landscape' | 'keep'>('portrait');
+  const [fitRange, setFitRange] = useState<string>('');
+
+  const [showMarginsModal, setShowMarginsModal] = useState(false);
+  const [marginMode, setMarginMode] = useState<'shrink-content' | 'expand-page'>('shrink-content');
+  const [marginsTop, setMarginsTop] = useState<number>(36);
+  const [marginsRight, setMarginsRight] = useState<number>(36);
+  const [marginsBottom, setMarginsBottom] = useState<number>(36);
+  const [marginsLeft, setMarginsLeft] = useState<number>(36);
+  const [marginsRange, setMarginsRange] = useState<string>('');
 
   // Initialize page metadata array
   useEffect(() => {
@@ -673,6 +695,98 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
     }
   };
 
+  // Apply Scale Page Content (Sprint C2.3)
+  const handleApplyScaleContent = async () => {
+    if (!document.data) return;
+    setIsProcessing(true);
+    setProcessingMsg(`Scaling content to ${scalePercent}%...`);
+    setErrorMsg(null);
+    try {
+      const targetIndices = selectedPages.length > 0 && !scaleRange.trim() ? selectedPages : undefined;
+      const updated = await documentService.scaleContent(document, {
+        scale: scalePercent / 100,
+        pageRange: scaleRange.trim() || undefined,
+        pageIndices: targetIndices,
+      });
+      setShowScaleModal(false);
+      if (updated.data) {
+        await onUpdateDocumentData(
+          updated.data,
+          updated.pageCount,
+          `Scale Content to ${scalePercent}%`
+        );
+        setSuccessNotice(`Page content scaled to ${scalePercent}% while preserving nominal page dimensions.`);
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to scale page content');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Apply Fit Content to Page (Sprint C2.3)
+  const handleApplyFitContent = async () => {
+    if (!document.data) return;
+    setIsProcessing(true);
+    setProcessingMsg(`Fitting content to ${fitTargetSize}...`);
+    setErrorMsg(null);
+    try {
+      const targetIndices = selectedPages.length > 0 && !fitRange.trim() ? selectedPages : undefined;
+      const updated = await documentService.fitContent(document, {
+        targetSize: fitTargetSize,
+        orientation: fitOrientation,
+        pageRange: fitRange.trim() || undefined,
+        pageIndices: targetIndices,
+      });
+      setShowFitModal(false);
+      if (updated.data) {
+        await onUpdateDocumentData(
+          updated.data,
+          updated.pageCount,
+          `Fit Content to ${fitTargetSize}`
+        );
+        setSuccessNotice(`Content fitted into ${fitTargetSize} page geometry with proportional scaling.`);
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to fit content to page');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Apply Add Page Margins (Sprint C2.3)
+  const handleApplyAddMargins = async () => {
+    if (!document.data) return;
+    setIsProcessing(true);
+    setProcessingMsg('Applying page margins...');
+    setErrorMsg(null);
+    try {
+      const targetIndices = selectedPages.length > 0 && !marginsRange.trim() ? selectedPages : undefined;
+      const updated = await documentService.addMargins(document, {
+        top: marginsTop,
+        right: marginsRight,
+        bottom: marginsBottom,
+        left: marginsLeft,
+        mode: marginMode,
+        pageRange: marginsRange.trim() || undefined,
+        pageIndices: targetIndices,
+      });
+      setShowMarginsModal(false);
+      if (updated.data) {
+        await onUpdateDocumentData(
+          updated.data,
+          updated.pageCount,
+          `Add Margins (${marginsTop}pt, ${marginsRight}pt, ${marginsBottom}pt, ${marginsLeft}pt)`
+        );
+        setSuccessNotice(`Margins applied: ${marginMode === 'shrink-content' ? 'content scaled to fit margins' : 'page dimensions expanded'}.`);
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to add page margins');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleDownloadCurrent = () => {
     if (document.data) {
       triggerLocalDownload(document.data, document.name);
@@ -867,6 +981,39 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
             >
               <FileOutput className="w-3.5 h-3.5 text-stone-600" />
               <span>Batch Export</span>
+            </button>
+
+            <button
+              onClick={() => setShowScaleModal(true)}
+              disabled={isProcessing}
+              id="btn-scale-page-content"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all cursor-pointer"
+              title="Scale existing page content up or down while strictly preserving nominal page dimensions"
+            >
+              <Scaling className="w-3.5 h-3.5 text-stone-600" />
+              <span>Scale Content</span>
+            </button>
+
+            <button
+              onClick={() => setShowFitModal(true)}
+              disabled={isProcessing}
+              id="btn-fit-content-to-page"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all cursor-pointer"
+              title="Proportionally fit and center page content into standard A4, Letter, or Legal target dimensions without stretching"
+            >
+              <Expand className="w-3.5 h-3.5 text-stone-600" />
+              <span>Fit to Page</span>
+            </button>
+
+            <button
+              onClick={() => setShowMarginsModal(true)}
+              disabled={isProcessing}
+              id="btn-add-page-margins"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all cursor-pointer"
+              title="Add custom top, bottom, left, and right margins around page content"
+            >
+              <Sliders className="w-3.5 h-3.5 text-stone-600" />
+              <span>Margins</span>
             </button>
           </div>
 
@@ -2367,6 +2514,447 @@ export const OrganizeTab: React.FC<OrganizeTabProps> = ({
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* SPRINT C2.3 MODAL 1: SCALE PAGE CONTENT */}
+      {showScaleModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-stone-200 shadow-2xl w-full max-w-lg p-6 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-orange-50 text-orange-600">
+                  <Scaling className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-stone-900">Scale Page Content</h3>
+                  <p className="text-xs text-stone-500">
+                    Scale visual content while preserving nominal page dimensions
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowScaleModal(false)}
+                className="p-1.5 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Specification Notice */}
+            <div className="p-3 bg-amber-50/80 border border-amber-200/70 rounded-2xl text-[11px] text-amber-900 leading-relaxed">
+              <span className="font-bold">Specification Notice: </span>
+              Proportionally scales existing vector and text streams around the page center without rasterization. Nominal paper dimensions and page rotation are strictly preserved.
+            </div>
+
+            <div className="space-y-4 text-xs">
+              {/* Presets */}
+              <div>
+                <label className="font-semibold text-stone-700 block mb-1.5">Scale Presets</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[50, 75, 80, 90, 100, 110, 125, 150, 200].map((pct) => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => setScalePercent(pct)}
+                      className={`px-2.5 py-1.5 rounded-xl font-mono text-xs transition-all cursor-pointer ${
+                        scalePercent === pct
+                          ? 'bg-orange-500 text-white font-bold shadow-2xs'
+                          : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                      }`}
+                    >
+                      {pct}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Slider & Custom Input */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-stone-700">Custom Scale</label>
+                  <span className="font-mono font-bold text-orange-600 text-sm">{scalePercent}%</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="10"
+                    max="300"
+                    step="5"
+                    value={scalePercent}
+                    onChange={(e) => setScalePercent(parseInt(e.target.value) || 100)}
+                    className="flex-1 accent-orange-500 cursor-pointer"
+                  />
+                  <div className="flex items-center gap-1 w-20">
+                    <input
+                      type="number"
+                      min="10"
+                      max="300"
+                      value={scalePercent}
+                      onChange={(e) => setScalePercent(Math.max(10, Math.min(300, parseInt(e.target.value) || 100)))}
+                      className="w-full px-2 py-1 bg-stone-50 border border-stone-200 rounded-lg text-center font-mono font-semibold"
+                    />
+                    <span className="text-stone-400 font-mono">%</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Page Range Targeting */}
+              <div>
+                <label className="font-semibold text-stone-700 block mb-1">
+                  Target Pages {selectedPages.length > 0 && <span className="text-orange-600 font-normal">({selectedPages.length} selected)</span>}
+                </label>
+                <input
+                  type="text"
+                  placeholder={selectedPages.length > 0 ? `Selected pages (${selectedPages.map((p) => p + 1).join(', ')})` : 'All pages (e.g. 1-3, 5)'}
+                  value={scaleRange}
+                  onChange={(e) => setScaleRange(e.target.value)}
+                  className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                />
+                <p className="text-[10px] text-stone-400 mt-1">Leave empty to apply to {selectedPages.length > 0 ? 'selected pages' : 'all pages'}.</p>
+              </div>
+
+              {/* Live Preview Information */}
+              <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl text-[11px] text-stone-600 space-y-1">
+                <div className="font-bold text-stone-800">Preview:</div>
+                <div>
+                  Content scaled to <strong>{scalePercent}%</strong> of original size.
+                  Content is centered on the page; outer paper boundaries remain unchanged.
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setShowScaleModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyScaleContent}
+                  disabled={isProcessing}
+                  id="btn-apply-scale-content"
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white shadow-xs shadow-orange-500/20 active:scale-95 transition-all cursor-pointer"
+                >
+                  Apply Scale ({scalePercent}%)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SPRINT C2.3 MODAL 2: FIT CONTENT TO PAGE */}
+      {showFitModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-stone-200 shadow-2xl w-full max-w-lg p-6 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-orange-50 text-orange-600">
+                  <Expand className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-stone-900">Fit Content to Page</h3>
+                  <p className="text-xs text-stone-500">
+                    Proportionally fit and center content into standard target page geometry
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowFitModal(false)}
+                className="p-1.5 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Specification Notice */}
+            <div className="p-3 bg-amber-50/80 border border-amber-200/70 rounded-2xl text-[11px] text-amber-900 leading-relaxed">
+              <span className="font-bold">Specification Notice: </span>
+              Computes proportional containment scale and centers content within target page dimensions. Vector content and aspect ratio are strictly preserved without distortion.
+            </div>
+
+            <div className="space-y-4 text-xs">
+              {/* Target Paper Size */}
+              <div>
+                <label className="font-semibold text-stone-700 block mb-1.5">Target Paper Size</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'A4', name: 'A4', dims: '210 × 297 mm' },
+                    { id: 'Letter', name: 'US Letter', dims: '8.5 × 11 in' },
+                    { id: 'Legal', name: 'US Legal', dims: '8.5 × 14 in' },
+                  ].map((size) => (
+                    <button
+                      key={size.id}
+                      type="button"
+                      onClick={() => setFitTargetSize(size.id as StandardPaperSizeName)}
+                      className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                        fitTargetSize === size.id
+                          ? 'border-orange-500 bg-orange-50/50 ring-2 ring-orange-400/30'
+                          : 'border-stone-200 bg-white hover:bg-stone-50'
+                      }`}
+                    >
+                      <div className="font-bold text-stone-900">{size.name}</div>
+                      <div className="text-[10px] text-stone-500 font-mono mt-0.5">{size.dims}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Target Orientation */}
+              <div>
+                <label className="font-semibold text-stone-700 block mb-1.5">Target Orientation</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'portrait', label: 'Portrait' },
+                    { id: 'landscape', label: 'Landscape' },
+                    { id: 'keep', label: 'Preserve Current' },
+                  ].map((ori) => (
+                    <button
+                      key={ori.id}
+                      type="button"
+                      onClick={() => setFitOrientation(ori.id as any)}
+                      className={`px-3 py-2 rounded-xl text-center font-semibold transition-all cursor-pointer ${
+                        fitOrientation === ori.id
+                          ? 'bg-orange-500 text-white shadow-2xs font-bold'
+                          : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                      }`}
+                    >
+                      {ori.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Page Range Targeting */}
+              <div>
+                <label className="font-semibold text-stone-700 block mb-1">
+                  Target Pages {selectedPages.length > 0 && <span className="text-orange-600 font-normal">({selectedPages.length} selected)</span>}
+                </label>
+                <input
+                  type="text"
+                  placeholder={selectedPages.length > 0 ? `Selected pages (${selectedPages.map((p) => p + 1).join(', ')})` : 'All pages (e.g. 1-3, 5)'}
+                  value={fitRange}
+                  onChange={(e) => setFitRange(e.target.value)}
+                  className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                />
+                <p className="text-[10px] text-stone-400 mt-1">Leave empty to apply to {selectedPages.length > 0 ? 'selected pages' : 'all pages'}.</p>
+              </div>
+
+              {/* Live Preview Information */}
+              <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl text-[11px] text-stone-600 space-y-1">
+                <div className="font-bold text-stone-800">Preview:</div>
+                <div>
+                  Target dimensions set to <strong>{fitTargetSize}</strong> ({fitOrientation}). Content proportionally scaled and centered without stretching.
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setShowFitModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyFitContent}
+                  disabled={isProcessing}
+                  id="btn-apply-fit-content"
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white shadow-xs shadow-orange-500/20 active:scale-95 transition-all cursor-pointer"
+                >
+                  Fit to {fitTargetSize}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SPRINT C2.3 MODAL 3: ADD PAGE MARGINS */}
+      {showMarginsModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-stone-200 shadow-2xl w-full max-w-lg p-6 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-orange-50 text-orange-600">
+                  <Sliders className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-stone-900">Add Page Margins</h3>
+                  <p className="text-xs text-stone-500">
+                    Create custom top, bottom, left, and right margin space around page content
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowMarginsModal(false)}
+                className="p-1.5 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Mode Toggle */}
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setMarginMode('shrink-content')}
+                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                  marginMode === 'shrink-content'
+                    ? 'border-orange-500 bg-orange-50/50 ring-2 ring-orange-400/30 font-bold text-stone-900'
+                    : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-600'
+                }`}
+              >
+                <div className="font-bold">Shrink Content</div>
+                <div className="text-[10px] text-stone-500 font-normal mt-0.5">Keep page dimensions; shrink & center content inside margins.</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMarginMode('expand-page')}
+                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                  marginMode === 'expand-page'
+                    ? 'border-orange-500 bg-orange-50/50 ring-2 ring-orange-400/30 font-bold text-stone-900'
+                    : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-600'
+                }`}
+              >
+                <div className="font-bold">Expand Page</div>
+                <div className="text-[10px] text-stone-500 font-normal mt-0.5">Preserve 100% content scale; expand outer sheet dimensions.</div>
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              {/* Presets */}
+              <div>
+                <label className="font-semibold text-stone-700 block mb-1.5">Margin Presets</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: 'None (0 pt)', val: 0 },
+                    { label: 'Compact (18 pt / 0.25 in)', val: 18 },
+                    { label: 'Standard (36 pt / 0.5 in)', val: 36 },
+                    { label: 'Wide (72 pt / 1.0 in)', val: 72 },
+                  ].map((p) => (
+                    <button
+                      key={p.val}
+                      type="button"
+                      onClick={() => {
+                        setMarginsTop(p.val);
+                        setMarginsRight(p.val);
+                        setMarginsBottom(p.val);
+                        setMarginsLeft(p.val);
+                      }}
+                      className="px-2.5 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold cursor-pointer text-xs"
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 4 Margin Inputs */}
+              <div>
+                <label className="font-semibold text-stone-700 block mb-1.5">Margin Offsets (Points)</label>
+                <div className="grid grid-cols-4 gap-2">
+                  <div>
+                    <label className="text-[10px] text-stone-500 font-semibold block mb-0.5">Top</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="300"
+                      value={marginsTop}
+                      onChange={(e) => setMarginsTop(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full px-2.5 py-1.5 bg-stone-50 border border-stone-200 rounded-xl font-mono text-center"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-stone-500 font-semibold block mb-0.5">Right</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="300"
+                      value={marginsRight}
+                      onChange={(e) => setMarginsRight(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full px-2.5 py-1.5 bg-stone-50 border border-stone-200 rounded-xl font-mono text-center"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-stone-500 font-semibold block mb-0.5">Bottom</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="300"
+                      value={marginsBottom}
+                      onChange={(e) => setMarginsBottom(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full px-2.5 py-1.5 bg-stone-50 border border-stone-200 rounded-xl font-mono text-center"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-stone-500 font-semibold block mb-0.5">Left</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="300"
+                      value={marginsLeft}
+                      onChange={(e) => setMarginsLeft(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full px-2.5 py-1.5 bg-stone-50 border border-stone-200 rounded-xl font-mono text-center"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Page Range Targeting */}
+              <div>
+                <label className="font-semibold text-stone-700 block mb-1">
+                  Target Pages {selectedPages.length > 0 && <span className="text-orange-600 font-normal">({selectedPages.length} selected)</span>}
+                </label>
+                <input
+                  type="text"
+                  placeholder={selectedPages.length > 0 ? `Selected pages (${selectedPages.map((p) => p + 1).join(', ')})` : 'All pages (e.g. 1-3, 5)'}
+                  value={marginsRange}
+                  onChange={(e) => setMarginsRange(e.target.value)}
+                  className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                />
+                <p className="text-[10px] text-stone-400 mt-1">Leave empty to apply to {selectedPages.length > 0 ? 'selected pages' : 'all pages'}.</p>
+              </div>
+
+              {/* Live Preview Information */}
+              <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl text-[11px] text-stone-600 space-y-1">
+                <div className="font-bold text-stone-800">Preview:</div>
+                <div>
+                  {marginMode === 'shrink-content' ? (
+                    <>Nominal page dimensions preserved. Content scaled and translated to create margins: Top {marginsTop}pt, Right {marginsRight}pt, Bottom {marginsBottom}pt, Left {marginsLeft}pt.</>
+                  ) : (
+                    <>Content scale 100% preserved. Outer page dimensions will expand by +{marginsLeft + marginsRight}pt width and +{marginsTop + marginsBottom}pt height.</>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setShowMarginsModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyAddMargins}
+                  disabled={isProcessing}
+                  id="btn-apply-add-margins"
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white shadow-xs shadow-orange-500/20 active:scale-95 transition-all cursor-pointer"
+                >
+                  Apply Margins
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

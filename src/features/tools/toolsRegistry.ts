@@ -57,6 +57,8 @@ import {
   CalendarDays,
   Palette,
   FileOutput,
+  Scaling,
+  Expand,
 } from 'lucide-react';
 import { AppView, ActiveTab } from '../../types/pdf';
 
@@ -322,6 +324,40 @@ export const CANONICAL_TOOLS: CanonicalPdfTool[] = [
     workspaceTab: 'organize',
     keywords: ['batch export', 'page ranges', 'range export', 'split ranges', 'multi export', 'page range batch', 'export selections', 'split multiple'],
   },
+  {
+    id: 'scale-page-content',
+    name: 'Scale Page Content',
+    shortDescription: 'Scale existing page content up or down while strictly preserving nominal page dimensions.',
+    category: 'organize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'organize',
+    workspaceTab: 'organize',
+    keywords: ['scale', 'shrink content', 'zoom', 'enlarge content', 'reduce', 'shrink page content', 'scale content', 'proportional scale'],
+  },
+  {
+    id: 'fit-content-to-page',
+    name: 'Fit Content to Page',
+    shortDescription: 'Proportionally fit and center page content into standard A4, Letter, or Legal target dimensions without stretching.',
+    category: 'organize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'organize',
+    workspaceTab: 'organize',
+    keywords: ['fit content', 'fit to page', 'conform size', 'contain', 'center content', 'fit a4', 'fit letter', 'page scaling'],
+  },
+  {
+    id: 'add-page-margins',
+    name: 'Add Page Margins',
+    shortDescription: 'Add custom top, bottom, left, and right margins around page content by shrinking content or expanding pages.',
+    category: 'organize',
+    status: 'available',
+    processingLocation: 'local',
+    routeView: 'organize',
+    workspaceTab: 'organize',
+    keywords: ['margins', 'add margins', 'page margins', 'padding', 'gutter', 'bleed', 'outer space', 'margin'],
+  },
+
 
   // ==========================================
   // 2. EDIT WORKSPACE
@@ -1023,6 +1059,12 @@ export function getToolIcon(id: string, className = 'w-6 h-6'): React.ReactNode 
       return React.createElement(FileOutput, { className });
     case 'page-selection':
       return React.createElement(CheckSquare, { className });
+    case 'scale-page-content':
+      return React.createElement(Scaling, { className });
+    case 'fit-content-to-page':
+      return React.createElement(Expand, { className });
+    case 'add-page-margins':
+      return React.createElement(Sliders, { className });
 
     case 'page-numbers':
       return React.createElement(Binary, { className });
