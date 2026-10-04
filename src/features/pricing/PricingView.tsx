@@ -1,7 +1,8 @@
 /**
  * Pricing View
  * Displays plans, server-defined entitlements, and Lemon Squeezy checkout trigger.
- * Truthful boundary: does not pretend payment succeeded if Lemon Squeezy is unconfigured.
+ * Truthful boundary: does not pretend payment is live or succeeded if unconfigured.
+ * Provides direct access to commercial trust surfaces (Terms, Privacy, Refund, Support).
  */
 import React, { useState, useEffect } from 'react';
 import {
@@ -20,6 +21,7 @@ import { saasService } from '../../services/saasService';
 import { useEntitlements } from '../../services/entitlementService';
 import { PlanDefinition, PlanId, LemonSqueezyConfigStatus } from '../../types/saas';
 import { AppView } from '../../types/pdf';
+import { TrustLegalModal, LegalTab } from '../../components/legal/TrustLegalModal';
 
 interface PricingViewProps {
   onNavigateView: (view: AppView) => void;
@@ -36,6 +38,8 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
     description: string;
     missingKeys?: string[];
   } | null>(null);
+  const [legalModalOpen, setLegalModalOpen] = useState(false);
+  const [legalTab, setLegalTab] = useState<LegalTab>('privacy');
 
   useEffect(() => {
     async function loadData() {
@@ -65,23 +69,28 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
       if (res.success && res.checkoutUrl) {
         window.location.href = res.checkoutUrl;
       } else {
-        // Truthful boundary: Lemon Squeezy not yet configured with live credentials
+        // Truthful boundary: Lemon Squeezy credentials check
         setModalMessage({
-          title: 'Lemon Squeezy Integration Boundary',
+          title: 'Lemon Squeezy Integration Status',
           description:
             res.error ||
-            'To enable live subscription checkouts, provide your Lemon Squeezy API credentials in .env.',
-          missingKeys: res.missingConfig || ['LEMON_SQUEEZY_API_KEY', 'LEMON_SQUEEZY_STORE_ID'],
+            'To enable live subscription checkouts, provide your Lemon Squeezy API credentials in your environment configuration.',
+          missingKeys: res.missingConfig || ['LEMON_SQUEEZY_API_KEY', 'LEMON_SQUEEZY_STORE_ID', 'LEMON_SQUEEZY_WEBHOOK_SECRET', 'LEMON_SQUEEZY_PRO_VARIANT_ID'],
         });
       }
     } catch (err: any) {
       setModalMessage({
         title: 'Checkout Request Failed',
-        description: err?.message || 'Could not initiate checkout session.',
+        description: err?.message || 'Could not initiate checkout session. Please sign in or try again.',
       });
     } finally {
       setCheckoutLoading(false);
     }
+  };
+
+  const openLegal = (tab: LegalTab) => {
+    setLegalTab(tab);
+    setLegalModalOpen(true);
   };
 
   return (
@@ -97,10 +106,10 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
         </button>
 
         <div className="flex items-center gap-2 text-xs">
-          <span className="text-stone-500 font-medium">Provider:</span>
+          <span className="text-stone-500 font-medium">Merchant of Record:</span>
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-mono text-[11px] font-semibold">
             <Sparkles className="w-3 h-3 text-amber-600" />
-            Lemon Squeezy {lemonConfig?.isConfigured ? 'Live' : 'Sandbox/Config'}
+            Lemon Squeezy ({lemonConfig?.isConfigured ? 'Configured' : 'Setup Required'})
           </span>
         </div>
       </div>
@@ -253,7 +262,46 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
         </div>
       </div>
 
-      {/* Modal: Lemon Squeezy Integration Boundary Notice */}
+      {/* Commercial Trust & Legal Surface Footer */}
+      <div className="border-t border-stone-200 pt-6 flex flex-wrap items-center justify-between gap-4 text-xs text-stone-500 max-w-4xl mx-auto">
+        <div className="flex items-center gap-1.5">
+          <ShieldCheck className="w-4 h-4 text-emerald-600" />
+          <span>Local PDF tools process documents directly in your browser.</span>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => openLegal('privacy')}
+            className="hover:text-stone-900 underline cursor-pointer"
+          >
+            Privacy Policy
+          </button>
+          <button
+            type="button"
+            onClick={() => openLegal('terms')}
+            className="hover:text-stone-900 underline cursor-pointer"
+          >
+            Terms of Service
+          </button>
+          <button
+            type="button"
+            onClick={() => openLegal('refund')}
+            className="hover:text-stone-900 underline cursor-pointer"
+          >
+            Refund & Cancellation
+          </button>
+          <button
+            type="button"
+            onClick={() => openLegal('support')}
+            className="hover:text-stone-900 underline cursor-pointer"
+          >
+            Support
+          </button>
+        </div>
+      </div>
+
+      {/* Modal: Lemon Squeezy Integration Status Notice */}
       {modalMessage && (
         <div className="fixed inset-0 z-50 bg-stone-950/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl border border-stone-200 shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95">
@@ -298,6 +346,13 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
           </div>
         </div>
       )}
+
+      {/* Legal Modal */}
+      <TrustLegalModal
+        isOpen={legalModalOpen}
+        initialTab={legalTab}
+        onClose={() => setLegalModalOpen(false)}
+      />
     </div>
   );
 };

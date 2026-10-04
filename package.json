@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test:engine": "tsx test-engine-verification.ts"
+    "test:engine": "tsx test-engine-verification.ts",
+    "test:security": "tsx test-p1-security-verification.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

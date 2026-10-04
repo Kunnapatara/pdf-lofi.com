@@ -4,6 +4,7 @@
  * - Manages server-authoritative authenticated session initialization
  * - Automatically credentials API requests with cookies/credentials: 'include'
  * - Enforces that entitlements and plan permissions originate from the server
+ * - Handles OTP request & verification flows for account ownership
  */
 import {
   BillingStateResponse,
@@ -34,7 +35,6 @@ class SaaSService {
    */
   async initSessionAndLoad(): Promise<void> {
     try {
-      // Ensure server session is established
       const initRes = await fetch('/api/auth/init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -82,17 +82,11 @@ class SaaSService {
       const res = await fetch('/api/billing/state', {
         credentials: 'include',
       });
-      if (res.status === 401 && !this.sessionInitialized) {
-        // Attempt session init once and retry
-        await fetch('/api/auth/init', { method: 'POST', credentials: 'include' });
-        this.sessionInitialized = true;
-        const retryRes = await fetch('/api/billing/state', { credentials: 'include' });
-        if (retryRes.ok) {
-          const data: BillingStateResponse = await retryRes.json();
-          this.currentState = data;
-          this.notify();
-          return data;
-        }
+
+      if (res.status === 401) {
+        // Unauthenticated visitor
+        this.currentState = null;
+        return null;
       }
 
       if (!res.ok) {
@@ -103,7 +97,7 @@ class SaaSService {
       this.notify();
       return data;
     } catch (err) {
-      console.warn('Could not fetch server billing state (dev offline or fallback):', err);
+      console.warn('Could not fetch server billing state:', err);
       return this.currentState;
     } finally {
       this.isFetching = false;
@@ -116,6 +110,73 @@ class SaaSService {
       throw new Error('Failed to load plans');
     }
     return res.json();
+  }
+
+  async requestOtp(
+    email: string,
+    purpose: 'login' | 'email_change' = 'login'
+  ): Promise<{ success: boolean; message: string; expiresAt?: number; devCode?: string; error?: string }> {
+    const res = await fetch('/api/auth/otp/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email, purpose }),
+    });
+
+    const data = await res.json();
+    return data;
+  }
+
+  async verifyOtp(
+    email: string,
+    code: string,
+    name?: string
+  ): Promise<{ success: boolean; user?: SaaSUser; error?: string; message?: string }> {
+    const res = await fetch('/api/auth/otp/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email, code, name }),
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success) {
+      this.sessionInitialized = true;
+      await this.refreshState();
+    }
+    return data;
+  }
+
+  async updateProfile(
+    name?: string,
+    email?: string,
+    verificationCode?: string
+  ): Promise<{ success: boolean; user?: SaaSUser; error?: string; message?: string }> {
+    const res = await fetch('/api/auth/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ name, email, verificationCode }),
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+      await this.refreshState();
+    }
+    return data;
+  }
+
+  async logout(): Promise<void> {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } finally {
+      this.currentState = null;
+      this.sessionInitialized = false;
+      await this.refreshState();
+    }
   }
 
   async createCheckout(
@@ -143,14 +204,18 @@ class SaaSService {
   async recordUsage(
     operationType: string,
     description: string,
-    creditsCost = 0
+    idempotencyKey?: string
   ): Promise<{ success: boolean; usage?: UserUsage; error?: string }> {
     try {
       const res = await fetch('/api/usage/record', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ operationType, description, creditsCost }),
+        body: JSON.stringify({
+          operationType,
+          description,
+          idempotencyKey: idempotencyKey || `idem_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        }),
       });
 
       const data = await res.json();
@@ -158,21 +223,17 @@ class SaaSService {
         this.currentState.usage = data.usage;
         this.notify();
       }
-      return data;
+      return {
+        success: res.ok,
+        usage: data.usage,
+        error: data.message || data.error,
+      };
     } catch (err: any) {
-      return { success: false, error: err?.message || 'Failed to record usage' };
+      return {
+        success: false,
+        error: err?.message || 'Network error recording usage',
+      };
     }
-  }
-
-  // Entitlement helper
-  checkEntitlement<K extends keyof PlanEntitlements>(
-    key: K,
-    fallback: PlanEntitlements[K]
-  ): PlanEntitlements[K] {
-    if (this.currentState?.entitlements?.[key] !== undefined) {
-      return this.currentState.entitlements[key];
-    }
-    return fallback;
   }
 }
 

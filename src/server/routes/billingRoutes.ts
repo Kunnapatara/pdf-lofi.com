@@ -3,6 +3,8 @@
  * Server-authoritative state management.
  * - Identity derived EXCLUSIVELY from validated server sessions (requireAuth)
  * - Ignores all client-supplied user identifiers (x-user-id header, body.userId)
+ * - Rejects client-supplied credit costs; strictly enforces canonical pricing
+ * - Validates checkout redirect URLs against server-controlled origin (rejects external open redirects)
  * - Returns 401 Unauthorized when unauthenticated — NO silent fallback to default user
  */
 import { Router, Response } from 'express';
@@ -11,6 +13,7 @@ import { getLemonSqueezyConfig } from '../lemonSqueezy/config';
 import { createLemonSqueezyCheckout, getCustomerPortalUrl } from '../lemonSqueezy/client';
 import { requireAuth, AuthenticatedRequest } from '../auth/session';
 import { BillingStateResponse } from '../../types/saas';
+import { getCanonicalOperation } from '../storage/operationCosts';
 
 export const billingRouter = Router();
 
@@ -94,17 +97,39 @@ billingRouter.get('/usage', requireAuth, (req: AuthenticatedRequest, res: Respon
 /**
  * POST /api/billing/usage/record or /api/usage/record
  * Record operation usage for the authenticated user.
- * Identity is strictly server-authoritative; any body.userId is discarded.
+ * - Identity is strictly server-authoritative; any body.userId is discarded
+ * - Operation cost is derived EXCLUSIVELY from canonical server definitions
+ * - Client-supplied creditsCost is NEVER trusted
+ * - Unknown operation types are rejected with 400 Bad Request
+ * - Idempotency keys protect against duplicate charge on network retries
  */
 billingRouter.post('/usage/record', requireAuth, (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
-  const { operationType, description, creditsCost } = req.body || {};
+  const { operationType, description, idempotencyKey } = req.body || {};
 
+  if (!operationType || typeof operationType !== 'string') {
+    return res.status(400).json({
+      error: 'MISSING_OPERATION_TYPE',
+      message: 'operationType is required.',
+    });
+  }
+
+  // 1. Authoritative lookup of canonical operation cost
+  const canonical = getCanonicalOperation(operationType);
+  if (!canonical) {
+    return res.status(400).json({
+      error: 'UNKNOWN_OPERATION_TYPE',
+      message: `Operation "${operationType}" is not a recognized canonical PDF operation. Client cannot specify arbitrary or untracked operations.`,
+    });
+  }
+
+  // 2. Atomically record usage in database using canonical cost
   const result = saasStore.recordUsage(
     user.id,
-    operationType || 'pdf_operation',
-    description || 'PDF operation executed',
-    typeof creditsCost === 'number' ? creditsCost : 0
+    canonical.type,
+    description || canonical.description,
+    canonical.cost,
+    typeof idempotencyKey === 'string' ? idempotencyKey : undefined
   );
 
   if (!result.allowed) {
@@ -117,6 +142,9 @@ billingRouter.post('/usage/record', requireAuth, (req: AuthenticatedRequest, res
 
   res.json({
     success: true,
+    operation: canonical.type,
+    creditsDeducted: canonical.cost,
+    alreadyProcessed: Boolean(result.alreadyProcessed),
     usage: result.usage,
   });
 });
@@ -132,10 +160,55 @@ export function isCheckoutInFlight(userId: string): boolean {
 }
 
 /**
- * Process a checkout request with authoritative server-side single-subscription check
- * and per-user checkout concurrency locking.
- * Blocks duplicate active/trialing/cancelled-in-period Pro subscriptions,
- * and rejects concurrent in-flight checkout creations for the same user.
+ * Validates and sanitizes a checkout redirect URL against server-controlled application origin.
+ * Prevents arbitrary external open redirects.
+ */
+export function sanitizeCheckoutRedirectUrl(rawUrl?: string, reqHost?: string): string {
+  const appUrlConfig = process.env.APP_URL?.trim();
+  const baseAppUrl = appUrlConfig || (reqHost ? `http://${reqHost}` : '');
+  const defaultRedirect = `${baseAppUrl}/?view=account&checkout=success`;
+
+  if (!rawUrl || typeof rawUrl !== 'string' || rawUrl.trim().length === 0) {
+    return defaultRedirect;
+  }
+
+  const trimmed = rawUrl.trim();
+
+  // If path-only relative URL, safely append to baseAppUrl
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) {
+    return `${baseAppUrl}${trimmed}`;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    // Disallow non-http/https protocols
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return defaultRedirect;
+    }
+
+    // If APP_URL is configured, enforce identical origin
+    if (appUrlConfig) {
+      const allowedOrigin = new URL(appUrlConfig).origin;
+      if (parsed.origin === allowedOrigin) {
+        return trimmed;
+      }
+    }
+
+    // Enforce host match if reqHost provided
+    if (reqHost && (parsed.host === reqHost || parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')) {
+      return trimmed;
+    }
+
+    console.warn(`[Checkout Security] External redirect URL rejected: ${trimmed}. Falling back to default.`);
+    return defaultRedirect;
+  } catch {
+    return defaultRedirect;
+  }
+}
+
+/**
+ * Process a checkout request with authoritative server-side single-subscription check,
+ * per-user checkout concurrency locking, and sanitized redirect URL.
  */
 export async function handleCheckoutRequest(
   userId: string,
@@ -143,7 +216,8 @@ export async function handleCheckoutRequest(
   userName: string,
   planId: string = 'pro',
   redirectUrl?: string,
-  checkoutCreator: typeof createLemonSqueezyCheckout = createLemonSqueezyCheckout
+  checkoutCreator: typeof createLemonSqueezyCheckout = createLemonSqueezyCheckout,
+  reqHost?: string
 ): Promise<{ status: number; body: any }> {
   const targetPlan = PLANS[planId as 'free' | 'pro'];
   if (!targetPlan || targetPlan.id === 'free') {
@@ -193,6 +267,9 @@ export async function handleCheckoutRequest(
     };
   }
 
+  // Sanitize redirect URL
+  const safeRedirectUrl = sanitizeCheckoutRedirectUrl(redirectUrl, reqHost);
+
   inFlightCheckouts.add(userId);
   try {
     const result = await checkoutCreator({
@@ -200,7 +277,7 @@ export async function handleCheckoutRequest(
       userEmail,
       userName,
       variantId: targetPlan.lemonSqueezyVariantId || undefined,
-      redirectUrl,
+      redirectUrl: safeRedirectUrl,
     });
 
     return {
@@ -220,13 +297,16 @@ export async function handleCheckoutRequest(
 billingRouter.post('/checkout', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
   const { planId = 'pro', redirectUrl } = req.body || {};
+  const reqHost = req.get('host');
 
   const result = await handleCheckoutRequest(
     user.id,
     user.email,
     user.name,
     planId,
-    redirectUrl
+    redirectUrl,
+    createLemonSqueezyCheckout,
+    reqHost
   );
 
   res.status(result.status).json(result.body);

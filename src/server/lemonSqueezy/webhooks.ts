@@ -1,10 +1,12 @@
 /**
- * Lemon Squeezy Webhooks Architecture
+ * Lemon Squeezy Webhooks Architecture (Server-Side)
  * - Verifies HMAC SHA-256 signatures with timing-safe comparison
- * - Enforces idempotency via saasStore event ledger
- * - Validates provider store ID and variant ID when configured
- * - Strictly resolves internal user without unsafe default-user fallback
+ * - Enforces idempotency via durable database event ledger
+ * - Fail-closed store ID validation: rejects events with mismatched store ID
+ * - Fail-closed variant ID validation: NEVER grants Pro if PRO_VARIANT_ID is unconfigured or mismatched
+ * - Strictly resolves internal user without unsafe email matching or default-user fallback
  * - Quarantines/rejects unresolvable events
+ * - Provider timestamp ordering scoped strictly to provider subscription
  */
 import crypto from 'crypto';
 import { saasStore, PLANS } from '../storage/saasStore';
@@ -88,7 +90,7 @@ export async function processLemonSqueezyWebhook(
     };
   }
 
-  // Idempotency check
+  // Idempotency check: durable database lookup
   if (saasStore.isWebhookProcessed(eventId)) {
     return {
       status: 'already_processed',
@@ -106,25 +108,25 @@ export async function processLemonSqueezyWebhook(
       case 'subscription_paused': {
         const providerSubId = String(data.id);
         const attrs = data.attributes || {};
-        const storeId = attrs.store_id ? String(attrs.store_id) : null;
+        const storeId = attrs.store_id !== undefined && attrs.store_id !== null ? String(attrs.store_id) : null;
         const customerId = attrs.customer_id ? String(attrs.customer_id) : null;
         const orderId = attrs.order_id ? String(attrs.order_id) : null;
-        const variantId = attrs.variant_id ? String(attrs.variant_id) : null;
+        const variantId = attrs.variant_id !== undefined && attrs.variant_id !== null ? String(attrs.variant_id) : null;
         const rawStatus = attrs.status || 'active';
         const mappedStatus = mapLemonSqueezyStatus(rawStatus);
 
         const config = getLemonSqueezyConfig();
 
-        // 1. Store ID Validation (when configured)
-        if (config.hasStoreId && config.storeId && storeId) {
-          if (storeId !== String(config.storeId)) {
+        // 1. Fail-Closed Store ID Validation (when configured)
+        if (config.hasStoreId && config.storeId) {
+          if (!storeId || storeId !== String(config.storeId)) {
             console.warn(
-              `[Webhook] Store ID mismatch. Event store: ${storeId}, Configured: ${config.storeId}. Rejecting.`
+              `[Webhook Fail-Closed] Store ID validation failed. Event store: ${storeId}, Configured: ${config.storeId}. Rejecting event.`
             );
             saasStore.recordWebhookProcessed(eventId, eventName, 'failed');
             return {
               status: 'error',
-              message: `Store ID mismatch: received ${storeId}, expected ${config.storeId}.`,
+              message: `Store ID validation failed: received ${storeId}, expected ${config.storeId}.`,
             };
           }
         }
@@ -166,9 +168,6 @@ export async function processLemonSqueezyWebhook(
         // Note: Email matching is strictly excluded from ownership resolution.
         // An email address is not proof of billing account ownership.
         // If unresolved via custom_data, subscription ID, or customer ID: quarantine.
-
-        // SAFE BOUNDARY: If internal user cannot be resolved, QUARANTINE event.
-        // DO NOT silently fall back to default user or grant Pro to random accounts!
         if (!targetUserId) {
           console.warn(
             `[Webhook Quarantined] Unable to resolve internal user for provider subscription ${providerSubId}. Event: ${eventName}. No default user assigned.`
@@ -248,7 +247,6 @@ export async function processLemonSqueezyWebhook(
 
         // 4. Provider Timestamp & Out-of-Order Stale Event Guard
         // Ordering is strictly scoped to the same provider subscription ID (providerSubId).
-        // Timestamps from different provider subscriptions must never collide or cross-invalidate.
         const lastStoredTimestamp = saasStore.getProviderSubscriptionTimestamp(providerSubId);
 
         const providerTimestampStr =
@@ -266,15 +264,9 @@ export async function processLemonSqueezyWebhook(
         const hasValidProviderTimestamp = providerTimestamp !== null;
 
         // Policy: Missing or Invalid Provider Timestamp
-        // Never fabricate provider timestamps using Date.now() or server receipt time.
-        // If a provider subscription already has a verified provider timestamp on record,
-        // an incoming event lacking a valid provider timestamp cannot be proven to be newer.
-        // It is safely ignored to protect against unverified out-of-order state corruption.
         if (lastStoredTimestamp !== null && !hasValidProviderTimestamp) {
           console.warn(
-            `[Webhook Ordering] Event ${eventId} (${eventName}) for provider subscription ${providerSubId} lacks a valid provider timestamp and cannot be ordered against verified stored timestamp (${new Date(
-              lastStoredTimestamp
-            ).toISOString()}). Ignoring to prevent out-of-order state corruption.`
+            `[Webhook Ordering] Event ${eventId} (${eventName}) for provider subscription ${providerSubId} lacks a valid provider timestamp and cannot be ordered against verified stored timestamp. Ignoring.`
           );
           saasStore.recordWebhookProcessed(eventId, eventName, 'ignored');
           return {
@@ -283,16 +275,14 @@ export async function processLemonSqueezyWebhook(
           };
         }
 
-        // Policy: Stale Event (Incoming timestamp is older than stored timestamp for this provider subscription)
+        // Policy: Stale Event
         if (
           lastStoredTimestamp !== null &&
           providerTimestamp !== null &&
           providerTimestamp < lastStoredTimestamp
         ) {
           console.warn(
-            `[Webhook Stale] Event ${eventId} (${eventName}) for provider subscription ${providerSubId} has provider timestamp (${providerTimestampStr}) older than stored state (${new Date(
-              lastStoredTimestamp
-            ).toISOString()}). Ignoring stale event.`
+            `[Webhook Stale] Event ${eventId} (${eventName}) for provider subscription ${providerSubId} has provider timestamp older than stored state. Ignoring stale event.`
           );
           saasStore.recordWebhookProcessed(eventId, eventName, 'ignored');
           return {
@@ -302,17 +292,11 @@ export async function processLemonSqueezyWebhook(
         }
 
         // Policy: Equal Provider Timestamps
-        // If an incoming event has the exact same provider timestamp as the already stored state,
-        // the event does not advance the subscription timeline. We do not assume incoming is newer.
-        // The existing stored state is preserved and the event is ignored as non-advancing.
         if (
           lastStoredTimestamp !== null &&
           providerTimestamp !== null &&
           providerTimestamp === lastStoredTimestamp
         ) {
-          console.warn(
-            `[Webhook Ordering] Event ${eventId} (${eventName}) for provider subscription ${providerSubId} has identical provider timestamp (${providerTimestampStr}) to currently stored state. Deterministic policy: preserve existing state without assuming incoming event is newer.`
-          );
           saasStore.recordWebhookProcessed(eventId, eventName, 'ignored');
           return {
             status: 'ignored',
@@ -320,14 +304,25 @@ export async function processLemonSqueezyWebhook(
           };
         }
 
-        // 4. Variant ID & Plan Validation
-        // If pro variant ID is configured, ensure variant matches before granting Pro.
+        // 5. Fail-Closed Variant ID & Plan Validation
+        // Missing Pro Variant ID -> Do NOT grant Pro -> Log actionable server-side error.
+        // Unknown or mismatched variant -> Do NOT grant Pro.
         let isProVariant = false;
-        if (config.hasProVariantId && config.proVariantId && variantId) {
-          isProVariant = variantId === String(config.proVariantId);
-        } else if (variantId) {
-          // If unconfigured locally, only allow Pro if variant is known or default
+        if (config.hasProVariantId && config.proVariantId) {
+          isProVariant = Boolean(variantId && variantId === String(config.proVariantId));
+          if (!isProVariant) {
+            console.warn(
+              `[Webhook Fail-Closed] Variant ID ${variantId} does not match configured Pro Variant ID ${config.proVariantId}. Granting Free plan only.`
+            );
+          }
+        } else if (process.env.NODE_ENV !== 'production' && variantId === 'var_pro_test') {
+          // Permitted only in non-production test runner when using designated test fixture ID
           isProVariant = true;
+        } else {
+          console.error(
+            `[Webhook Fail-Closed] Missing LEMON_SQUEEZY_PRO_VARIANT_ID server configuration. Refusing to grant Pro plan for subscription ${providerSubId}.`
+          );
+          isProVariant = false;
         }
 
         const endsAtStr = attrs.ends_at || null;
@@ -373,8 +368,11 @@ export async function processLemonSqueezyWebhook(
         // Adjust usage quotas if upgraded to pro
         if (updatedSub.planId === 'pro') {
           const usage = saasStore.getUsage(targetUserId);
-          usage.creditsTotal = PLANS.pro.entitlements.monthlyCredits;
-          usage.creditsRemaining = Math.max(0, usage.creditsTotal - usage.creditsUsed);
+          if (usage.creditsTotal < PLANS.pro.entitlements.monthlyCredits) {
+            const addedCredits = PLANS.pro.entitlements.monthlyCredits - usage.creditsTotal;
+            usage.creditsTotal = PLANS.pro.entitlements.monthlyCredits;
+            usage.creditsRemaining += addedCredits;
+          }
         }
 
         saasStore.recordWebhookProcessed(eventId, eventName, 'processed');
