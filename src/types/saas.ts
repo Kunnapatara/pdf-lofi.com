@@ -49,6 +49,7 @@ export interface PlanDefinition {
   priceYearly: number;
   billingInterval: 'monthly' | 'yearly';
   lemonSqueezyVariantId: string | null;
+  lemonSqueezyAnnualVariantId?: string | null;
   features: string[];
   entitlements: PlanEntitlements;
   isPopular?: boolean;
@@ -97,8 +98,10 @@ export interface LemonSqueezyConfigStatus {
   hasStoreId: boolean;
   hasWebhookSecret: boolean;
   hasProVariantId: boolean;
+  hasProAnnualVariantId?: boolean;
   storeId: string | null;
   proVariantId: string | null;
+  proAnnualVariantId?: string | null;
   mode: 'live' | 'test' | 'unconfigured';
 }
 

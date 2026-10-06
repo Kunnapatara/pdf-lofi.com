@@ -308,14 +308,25 @@ export async function processLemonSqueezyWebhook(
         // Missing Pro Variant ID -> Do NOT grant Pro -> Log actionable server-side error.
         // Unknown or mismatched variant -> Do NOT grant Pro.
         let isProVariant = false;
+        const validProVariants: string[] = [];
         if (config.hasProVariantId && config.proVariantId) {
-          isProVariant = Boolean(variantId && variantId === String(config.proVariantId));
+          validProVariants.push(String(config.proVariantId));
+        }
+        if (config.hasProAnnualVariantId && config.proAnnualVariantId) {
+          validProVariants.push(String(config.proAnnualVariantId));
+        }
+
+        if (validProVariants.length > 0) {
+          isProVariant = Boolean(variantId && validProVariants.includes(String(variantId)));
           if (!isProVariant) {
             console.warn(
               `[Webhook Fail-Closed] Variant ID ${variantId} does not match configured Pro Variant ID ${config.proVariantId}. Granting Free plan only.`
             );
           }
-        } else if (process.env.NODE_ENV !== 'production' && variantId === 'var_pro_test') {
+        } else if (
+          process.env.NODE_ENV !== 'production' &&
+          (variantId === 'var_pro_test' || variantId === 'var_pro_annual_test')
+        ) {
           // Permitted only in non-production test runner when using designated test fixture ID
           isProVariant = true;
         } else {

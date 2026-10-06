@@ -10,11 +10,15 @@ export function getLemonSqueezyConfig(): LemonSqueezyConfigStatus {
   const storeId = process.env.LEMON_SQUEEZY_STORE_ID;
   const webhookSecret = process.env.LEMON_SQUEEZY_WEBHOOK_SECRET;
   const proVariantId = process.env.LEMON_SQUEEZY_PRO_VARIANT_ID;
+  const proAnnualVariantId = process.env.LEMON_SQUEEZY_PRO_ANNUAL_VARIANT_ID;
 
   const hasApiKey = Boolean(apiKey && apiKey.trim().length > 0 && !apiKey.includes('YOUR_'));
   const hasStoreId = Boolean(storeId && storeId.trim().length > 0 && !storeId.includes('YOUR_'));
   const hasWebhookSecret = Boolean(webhookSecret && webhookSecret.trim().length > 0 && !webhookSecret.includes('YOUR_'));
   const hasProVariantId = Boolean(proVariantId && proVariantId.trim().length > 0 && !proVariantId.includes('YOUR_'));
+  const hasProAnnualVariantId = Boolean(
+    proAnnualVariantId && proAnnualVariantId.trim().length > 0 && !proAnnualVariantId.includes('YOUR_')
+  );
 
   // Production-safe fail-closed configuration: ALL 4 credentials are required for live billing!
   const isConfigured = hasApiKey && hasStoreId && hasWebhookSecret && hasProVariantId;
@@ -25,8 +29,10 @@ export function getLemonSqueezyConfig(): LemonSqueezyConfigStatus {
     hasStoreId,
     hasWebhookSecret,
     hasProVariantId,
+    hasProAnnualVariantId,
     storeId: hasStoreId ? (storeId as string).trim() : null,
     proVariantId: hasProVariantId ? (proVariantId as string).trim() : null,
+    proAnnualVariantId: hasProAnnualVariantId ? (proAnnualVariantId as string).trim() : null,
     mode: isConfigured ? 'live' : 'unconfigured',
   };
 }

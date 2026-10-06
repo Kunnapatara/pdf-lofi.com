@@ -217,7 +217,8 @@ export async function handleCheckoutRequest(
   planId: string = 'pro',
   redirectUrl?: string,
   checkoutCreator: typeof createLemonSqueezyCheckout = createLemonSqueezyCheckout,
-  reqHost?: string
+  reqHost?: string,
+  billingInterval: 'monthly' | 'yearly' = 'monthly'
 ): Promise<{ status: number; body: any }> {
   const targetPlan = PLANS[planId as 'free' | 'pro'];
   if (!targetPlan || targetPlan.id === 'free') {
@@ -229,6 +230,25 @@ export async function handleCheckoutRequest(
       },
     };
   }
+
+  // Yearly billing check: enforce legitimate annual variant configuration
+  if (billingInterval === 'yearly' && !targetPlan.lemonSqueezyAnnualVariantId) {
+    return {
+      status: 400,
+      body: {
+        success: false,
+        isConfigured: false,
+        error:
+          'Annual billing is not yet configured on this server. Please contact support or select monthly billing.',
+        missingConfig: ['LEMON_SQUEEZY_PRO_ANNUAL_VARIANT_ID'],
+      },
+    };
+  }
+
+  const targetVariantId =
+    billingInterval === 'yearly'
+      ? targetPlan.lemonSqueezyAnnualVariantId
+      : targetPlan.lemonSqueezyVariantId;
 
   // Authoritative server-side single-subscription check
   const currentSub = saasStore.getSubscription(userId);
@@ -276,7 +296,7 @@ export async function handleCheckoutRequest(
       userId, // Strictly server-derived from authenticated session
       userEmail,
       userName,
-      variantId: targetPlan.lemonSqueezyVariantId || undefined,
+      variantId: targetVariantId || undefined,
       redirectUrl: safeRedirectUrl,
     });
 
@@ -296,7 +316,7 @@ export async function handleCheckoutRequest(
  */
 billingRouter.post('/checkout', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
-  const { planId = 'pro', redirectUrl } = req.body || {};
+  const { planId = 'pro', billingInterval = 'monthly', redirectUrl } = req.body || {};
   const reqHost = req.get('host');
 
   const result = await handleCheckoutRequest(
@@ -306,7 +326,8 @@ billingRouter.post('/checkout', requireAuth, async (req: AuthenticatedRequest, r
     planId,
     redirectUrl,
     createLemonSqueezyCheckout,
-    reqHost
+    reqHost,
+    billingInterval
   );
 
   res.status(result.status).json(result.body);

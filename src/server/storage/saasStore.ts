@@ -55,10 +55,11 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
     badge: 'RECOMMENDED',
     tagline: 'For power users & higher-capacity documents',
     description: 'Higher-capacity document workflows and large file support.',
-    priceMonthly: 12,
-    priceYearly: 108,
+    priceMonthly: 6,
+    priceYearly: 60,
     billingInterval: 'monthly',
     lemonSqueezyVariantId: process.env.LEMON_SQUEEZY_PRO_VARIANT_ID || null,
+    lemonSqueezyAnnualVariantId: process.env.LEMON_SQUEEZY_PRO_ANNUAL_VARIANT_ID || null,
     isPopular: true,
     features: [
       'All Free tier capabilities included',
@@ -180,13 +181,14 @@ export class SaaSStore {
 
   saveUser(user: SaaSUser): SaaSUser {
     const cleanEmail = user.email.trim().toLowerCase();
+    const createdAt = user.createdAt || Date.now();
     this.dbInstance.db
       .prepare(
         `INSERT INTO users (id, email, name, created_at)
          VALUES (?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET email = excluded.email, name = excluded.name`
       )
-      .run(user.id, cleanEmail, user.name, user.createdAt);
+      .run(user.id, cleanEmail, user.name, createdAt);
 
     return {
       ...user,

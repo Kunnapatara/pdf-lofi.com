@@ -180,7 +180,8 @@ class SaaSService {
   }
 
   async createCheckout(
-    planId: PlanId = 'pro'
+    planId: PlanId = 'pro',
+    billingInterval: 'monthly' | 'yearly' = 'monthly'
   ): Promise<{ success: boolean; checkoutUrl?: string; isConfigured: boolean; error?: string; missingConfig?: string[] }> {
     const res = await fetch('/api/billing/checkout', {
       method: 'POST',
@@ -188,6 +189,7 @@ class SaaSService {
       credentials: 'include',
       body: JSON.stringify({
         planId,
+        billingInterval,
         redirectUrl: `${window.location.origin}/?view=account&checkout=success`,
       }),
     });

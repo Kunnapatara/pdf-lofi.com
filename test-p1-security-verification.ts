@@ -22,6 +22,7 @@ import {
   sanitizeCheckoutRedirectUrl,
   isCheckoutInFlight,
 } from './src/server/routes/billingRoutes';
+import { createLemonSqueezyCheckout } from './src/server/lemonSqueezy/client';
 import { getCanonicalOperation } from './src/server/storage/operationCosts';
 import fs from 'fs';
 import path from 'path';
@@ -693,6 +694,122 @@ async function runSecurityTestSuite() {
     (resP1.status === 200 && resP2.status === 409) || (resP1.status === 409 && resP2.status === 200),
     'Checkout: Concurrent Requests Blocked (409 Conflict)',
     'Simultaneous checkouts for the same account blocked by per-user concurrency mutex.'
+  );
+
+  // --------------------------------------------------------------------------
+  // SECTION 7: PRICING & BILLING MODEL INVARIANTS
+  // --------------------------------------------------------------------------
+  console.log('\n--- SECTION 7: Pricing & Billing Model Invariants ---');
+
+  // Test 7.1: Authoritative Pro and Free Pricing Invariants
+  assert(
+    PLANS.pro.priceMonthly === 6 &&
+      PLANS.pro.priceYearly === 60 &&
+      PLANS.free.priceMonthly === 0 &&
+      PLANS.free.priceYearly === 0,
+    'Pricing: Authoritative $6/mo and $60/yr Contract',
+    `Verified Pro is exactly $6/month and $60/year; Free is $0/month and $0/year.`
+  );
+
+  // Test 7.2: Entitlement Preservation Across Price Change
+  assert(
+    PLANS.pro.entitlements.maxFileSizeMB === 500 &&
+      PLANS.pro.entitlements.maxPagesPerDoc === 1000 &&
+      PLANS.pro.entitlements.batchMergeLimit === 50 &&
+      PLANS.pro.entitlements.monthlyCredits === 250 &&
+      PLANS.pro.entitlements.advancedToolsAccess === true &&
+      PLANS.free.entitlements.maxFileSizeMB === 25 &&
+      PLANS.free.entitlements.maxPagesPerDoc === 50 &&
+      PLANS.free.entitlements.batchMergeLimit === 5 &&
+      PLANS.free.entitlements.monthlyCredits === 10,
+    'Pricing: Entitlement Capacities Strictly Preserved',
+    'Pro and Free capacity limits, merge quotas, and credit allowances preserved identically.'
+  );
+
+  // Test 7.3: Annual checkout fails safely when LEMON_SQUEEZY_PRO_ANNUAL_VARIANT_ID unconfigured
+  const unconfiguredAnnualUser = store.saveUser({
+    id: `usr_ann_unconf_${Date.now()}`,
+    email: `ann_unconf_${Date.now()}@test.com`,
+    name: 'Unconfigured Annual User',
+    createdAt: Date.now(),
+  });
+  const unconfiguredAnnualRes = await handleCheckoutRequest(
+    unconfiguredAnnualUser.id,
+    unconfiguredAnnualUser.email,
+    unconfiguredAnnualUser.name,
+    'pro',
+    undefined,
+    createLemonSqueezyCheckout,
+    'localhost:3000',
+    'yearly'
+  );
+  assert(
+    unconfiguredAnnualRes.status === 400 &&
+      unconfiguredAnnualRes.body.missingConfig?.includes('LEMON_SQUEEZY_PRO_ANNUAL_VARIANT_ID'),
+    'Billing: Unconfigured Annual Checkout Fails Closed Truthfully',
+    'Annual checkout does not use fake variant ID or silently misbill monthly when annual variant is unconfigured.'
+  );
+
+  // Test 7.4: Configured Annual Variant triggers correct annual checkout
+  process.env.LEMON_SQUEEZY_PRO_ANNUAL_VARIANT_ID = 'variant_pro_annual_prod_789';
+  PLANS.pro.lemonSqueezyAnnualVariantId = 'variant_pro_annual_prod_789';
+  let capturedCheckoutVariant: string | undefined = undefined;
+  const mockAnnualCheckoutCreator = async (params: any) => {
+    capturedCheckoutVariant = params.variantId;
+    return { success: true, checkoutUrl: 'https://lemonsqueezy.com/annual_mock', isConfigured: true };
+  };
+  const configuredAnnualUser = store.saveUser({
+    id: `usr_ann_conf_${Date.now()}`,
+    email: `ann_conf_${Date.now()}@test.com`,
+    name: 'Configured Annual User',
+    createdAt: Date.now(),
+  });
+  const configuredAnnualRes = await handleCheckoutRequest(
+    configuredAnnualUser.id,
+    configuredAnnualUser.email,
+    configuredAnnualUser.name,
+    'pro',
+    undefined,
+    mockAnnualCheckoutCreator,
+    'localhost:3000',
+    'yearly'
+  );
+  assert(
+    configuredAnnualRes.status === 200 &&
+      capturedCheckoutVariant === 'variant_pro_annual_prod_789',
+    'Billing: Configured Annual Checkout Dispatches Annual Variant',
+    'Annual checkout selects configured LEMON_SQUEEZY_PRO_ANNUAL_VARIANT_ID cleanly.'
+  );
+
+  // Test 7.5: Configured Annual Variant Webhook Grants Pro Entitlement
+  const annualWebhookPayload = {
+    meta: {
+      event_name: 'subscription_created',
+      custom_data: { user_id: configuredAnnualUser.id },
+    },
+    data: {
+      id: `sub_annual_pro_${Date.now()}`,
+      attributes: {
+        store_id: 'store_test_123',
+        variant_id: 'variant_pro_annual_prod_789',
+        status: 'active',
+        updated_at: new Date().toISOString(),
+      },
+    },
+  };
+  const annualWebhookRes = await processLemonSqueezyWebhook(
+    annualWebhookPayload,
+    `evt_annual_pro_${Date.now()}`
+  );
+  const annualSub = store.getSubscription(configuredAnnualUser.id);
+  const annualEntitlements = store.getEntitlements(configuredAnnualUser.id);
+  assert(
+    annualWebhookRes.status === 'processed' &&
+      annualSub.planId === 'pro' &&
+      annualEntitlements.maxFileSizeMB === 500 &&
+      annualEntitlements.batchMergeLimit === 50,
+    'Webhook: Annual Variant Grants Full Pro Entitlements',
+    'Webhook for configured annual variant correctly grants Pro plan with 500MB and 50-file merge.'
   );
 
   // Clean up test db file
