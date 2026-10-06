@@ -812,6 +812,67 @@ async function runSecurityTestSuite() {
     'Webhook for configured annual variant correctly grants Pro plan with 500MB and 50-file merge.'
   );
 
+  // Test 7.6: Monthly Checkout dispatches Monthly Pro Variant cleanly
+  let capturedMonthlyVariant: string | undefined = undefined;
+  const mockMonthlyCheckoutCreator = async (params: any) => {
+    capturedMonthlyVariant = params.variantId;
+    return { success: true, checkoutUrl: 'https://lemonsqueezy.com/monthly_mock', isConfigured: true };
+  };
+  const configuredMonthlyUser = store.saveUser({
+    id: `usr_mon_conf_${Date.now()}`,
+    email: `mon_conf_${Date.now()}@test.com`,
+    name: 'Configured Monthly User',
+    createdAt: Date.now(),
+  });
+  const configuredMonthlyRes = await handleCheckoutRequest(
+    configuredMonthlyUser.id,
+    configuredMonthlyUser.email,
+    configuredMonthlyUser.name,
+    'pro',
+    undefined,
+    mockMonthlyCheckoutCreator,
+    'localhost:3000',
+    'monthly'
+  );
+  assert(
+    configuredMonthlyRes.status === 200 &&
+      capturedMonthlyVariant === process.env.LEMON_SQUEEZY_PRO_VARIANT_ID,
+    'Billing: Configured Monthly Checkout Dispatches Monthly Variant',
+    'Monthly checkout selects configured LEMON_SQUEEZY_PRO_VARIANT_ID cleanly.'
+  );
+
+  // Test 7.7: Static verification: PricingView.tsx contains NO savings or discount messaging
+  const pricingViewContent = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/features/pricing/PricingView.tsx'),
+    'utf-8'
+  );
+  const lowercasePricing = pricingViewContent.toLowerCase();
+  const forbiddenPhrases = [
+    'save $',
+    'save 16',
+    'save 17',
+    'best value',
+    '% off',
+    'discount',
+    'savings',
+  ];
+  const foundForbidden = forbiddenPhrases.filter((phrase) => lowercasePricing.includes(phrase));
+  assert(
+    foundForbidden.length === 0,
+    'UI: No Annual Savings or Discount Messaging in PricingView',
+    `Verified PricingView.tsx has no prohibited savings or discount claims (${foundForbidden.join(', ') || 'none found'}).`
+  );
+
+  // Test 7.8: Free and Pro Plan Toolkit Parity & Capacity Model
+  assert(
+    PLANS.free.features.length >= 7 &&
+      PLANS.pro.features.some((f) => f.toLowerCase().includes('everything in free')) &&
+      PLANS.pro.entitlements.maxFileSizeMB === 500 &&
+      PLANS.free.entitlements.maxFileSizeMB === 25,
+    'Product Model: Shared Toolkit with Pro Capacity Extension',
+    'Free keeps complete toolkit; Pro provides expanded capacity and usage without artificial tool gating.'
+  );
+
   // Clean up test db file
   try {
     if (fs.existsSync(testDbPath)) {

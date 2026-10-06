@@ -23,7 +23,7 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
     name: 'Free Community',
     tagline: 'Private, in-browser PDF tools for everyday work',
     description:
-      'Supported local PDF tools process your document directly in your browser. PDF files are not uploaded for these operations.',
+      'Full access to the supported PDF toolkit for everyday use, with Free usage limits.',
     priceMonthly: 0,
     priceYearly: 0,
     billingInterval: 'monthly',
@@ -53,19 +53,35 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
     id: 'pro',
     name: 'Pro Pass',
     badge: 'RECOMMENDED',
-    tagline: 'For power users & higher-capacity documents',
-    description: 'Higher-capacity document workflows and large file support.',
+    tagline: 'For users who work with larger documents and heavier PDF usage',
+    description: 'Higher-capacity document workflows and large file support with the same full PDF toolkit.',
     priceMonthly: 6,
     priceYearly: 60,
     billingInterval: 'monthly',
-    lemonSqueezyVariantId: process.env.LEMON_SQUEEZY_PRO_VARIANT_ID || null,
-    lemonSqueezyAnnualVariantId: process.env.LEMON_SQUEEZY_PRO_ANNUAL_VARIANT_ID || null,
+    get lemonSqueezyVariantId(): string | null {
+      return (this as any)._variantId !== undefined
+        ? (this as any)._variantId
+        : (process.env.LEMON_SQUEEZY_PRO_VARIANT_ID || null);
+    },
+    set lemonSqueezyVariantId(val: string | null) {
+      (this as any)._variantId = val;
+    },
+    get lemonSqueezyAnnualVariantId(): string | null {
+      return (this as any)._annualVariantId !== undefined
+        ? (this as any)._annualVariantId
+        : (process.env.LEMON_SQUEEZY_PRO_ANNUAL_VARIANT_ID || null);
+    },
+    set lemonSqueezyAnnualVariantId(val: string | null) {
+      (this as any)._annualVariantId = val;
+    },
     isPopular: true,
     features: [
-      'All Free tier capabilities included',
-      'Designed for higher-capacity documents up to 500 MB',
-      'Designed for documents up to 1,000 pages',
+      'Everything in Free Community tier',
+      'Up to 500 MB per document',
+      'Up to 1,000 pages per document',
       'Merge up to 50 files',
+      'Monthly workflow allowance (250 credits)',
+      'Priority support',
     ],
     entitlements: {
       localProcessing: true,

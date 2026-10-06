@@ -31,6 +31,7 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
   const { isPro, subscription } = useEntitlements();
   const [plans, setPlans] = useState<PlanDefinition[]>([]);
   const [lemonConfig, setLemonConfig] = useState<LemonSqueezyConfigStatus | null>(null);
+  const [billingInterval, setBillingInterval] = useState<'monthly' | 'yearly'>('monthly');
   const [isLoading, setIsLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [modalMessage, setModalMessage] = useState<{
@@ -64,18 +65,33 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
 
     setCheckoutLoading(true);
     try {
-      const res = await saasService.createCheckout(planId);
+      const res = await saasService.createCheckout(planId, billingInterval);
 
       if (res.success && res.checkoutUrl) {
         window.location.href = res.checkoutUrl;
       } else {
         // Truthful boundary: Lemon Squeezy credentials check
+        const defaultMissing =
+          billingInterval === 'yearly'
+            ? [
+                'LEMON_SQUEEZY_API_KEY',
+                'LEMON_SQUEEZY_STORE_ID',
+                'LEMON_SQUEEZY_WEBHOOK_SECRET',
+                'LEMON_SQUEEZY_PRO_ANNUAL_VARIANT_ID',
+              ]
+            : [
+                'LEMON_SQUEEZY_API_KEY',
+                'LEMON_SQUEEZY_STORE_ID',
+                'LEMON_SQUEEZY_WEBHOOK_SECRET',
+                'LEMON_SQUEEZY_PRO_VARIANT_ID',
+              ];
+
         setModalMessage({
           title: 'Lemon Squeezy Integration Status',
           description:
             res.error ||
             'To enable live subscription checkouts, provide your Lemon Squeezy API credentials in your environment configuration.',
-          missingKeys: res.missingConfig || ['LEMON_SQUEEZY_API_KEY', 'LEMON_SQUEEZY_STORE_ID', 'LEMON_SQUEEZY_WEBHOOK_SECRET', 'LEMON_SQUEEZY_PRO_VARIANT_ID'],
+          missingKeys: res.missingConfig || defaultMissing,
         });
       }
     } catch (err: any) {
@@ -124,8 +140,44 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
           Simple, Fair Plans for PDF Artisans
         </h1>
         <p className="text-sm text-stone-600 leading-relaxed">
-          Standard local-first operations are free with generous capacity. Upgrade to Pro for merge capacity up to 50 files and large documents up to 500 MB.
+          Both plans include the complete client-side PDF toolkit. Upgrade to Pro when you need higher document size, page capacity, and batch limits.
         </p>
+      </div>
+
+      {/* Billing Interval Toggle (Monthly vs Annual) */}
+      <div className="flex justify-center items-center pt-2">
+        <div
+          role="radiogroup"
+          aria-label="Billing interval selection"
+          className="inline-flex items-center p-1 bg-stone-100 rounded-2xl border border-stone-200 shadow-inner"
+        >
+          <button
+            type="button"
+            role="radio"
+            aria-checked={billingInterval === 'monthly'}
+            onClick={() => setBillingInterval('monthly')}
+            className={`px-5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              billingInterval === 'monthly'
+                ? 'bg-white text-stone-900 shadow-xs'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            Monthly Billing
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={billingInterval === 'yearly'}
+            onClick={() => setBillingInterval('yearly')}
+            className={`px-5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              billingInterval === 'yearly'
+                ? 'bg-white text-stone-900 shadow-xs'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            Annual Billing
+          </button>
+        </div>
       </div>
 
       {/* Pricing Cards Grid */}
@@ -133,6 +185,18 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
         {plans.map((plan) => {
           const isCurrent = plan.id === (subscription?.planId || 'free');
           const isProPlan = plan.id === 'pro';
+
+          const displayPrice = isProPlan
+            ? billingInterval === 'yearly'
+              ? plan.priceYearly
+              : plan.priceMonthly
+            : plan.priceMonthly;
+
+          const displayInterval = isProPlan
+            ? billingInterval === 'yearly'
+              ? '/ year'
+              : '/ month'
+            : 'forever';
 
           return (
             <div
@@ -157,13 +221,20 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
                   <p className="text-xs text-stone-500 mt-1">{plan.tagline}</p>
                 </div>
 
-                <div className="flex items-baseline gap-1 pt-2">
-                  <span className="text-4xl font-extrabold text-stone-900">
-                    ${plan.priceMonthly}
-                  </span>
-                  <span className="text-xs font-semibold text-stone-500">
-                    {plan.priceMonthly === 0 ? 'forever' : '/ month'}
-                  </span>
+                <div className="pt-2">
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-4xl font-extrabold text-stone-900">
+                      ${displayPrice}
+                    </span>
+                    <span className="text-xs font-semibold text-stone-500">
+                      {displayInterval}
+                    </span>
+                  </div>
+                  {isProPlan && (
+                    <div className="text-[11px] font-medium text-stone-500 mt-0.5">
+                      {billingInterval === 'yearly' ? '$60 billed annually' : '$6 billed monthly'}
+                    </div>
+                  )}
                 </div>
 
                 <p className="text-xs text-stone-600 border-t border-stone-100 pt-3">
@@ -209,7 +280,13 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
                       <span>Connecting Lemon Squeezy...</span>
                     ) : (
                       <>
-                        <span>{isProPlan ? 'Upgrade with Lemon Squeezy' : 'Switch to Free'}</span>
+                        <span>
+                          {isProPlan
+                            ? billingInterval === 'yearly'
+                              ? 'Upgrade to Pro Annual'
+                              : 'Upgrade to Pro Monthly'
+                            : 'Switch to Free'}
+                        </span>
                         <ArrowRight className="w-3.5 h-3.5" />
                       </>
                     )}
@@ -236,8 +313,16 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
             <tbody className="divide-y divide-stone-100 text-stone-700">
               <tr>
                 <td className="py-3 pr-4 font-semibold flex items-start gap-1.5">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Full PDF toolkit access (view, merge, split, rotate, bates number, overlay, repair)</span>
+                </td>
+                <td className="py-3 px-4 text-emerald-600 font-semibold">Included</td>
+                <td className="py-3 px-4 text-emerald-600 font-semibold">Included</td>
+              </tr>
+              <tr>
+                <td className="py-3 pr-4 font-semibold flex items-start gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <span>Supported local PDF tools process your document directly in your browser. PDF files are not uploaded for these operations.</span>
+                  <span>Private local-first processing (files processed in browser without uploads)</span>
                 </td>
                 <td className="py-3 px-4 text-emerald-600 font-semibold">Included</td>
                 <td className="py-3 px-4 text-emerald-600 font-semibold">Included</td>
@@ -253,9 +338,19 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNavigateView }) => {
                 <td className="py-3 px-4 font-bold text-stone-900">Designed for up to 1,000 pages</td>
               </tr>
               <tr>
-                <td className="py-3 pr-4 font-semibold">Merge capacity</td>
+                <td className="py-3 pr-4 font-semibold">Batch merge capacity</td>
                 <td className="py-3 px-4">Merge up to 5 files</td>
                 <td className="py-3 px-4 font-bold text-stone-900">Merge up to 50 files</td>
+              </tr>
+              <tr>
+                <td className="py-3 pr-4 font-semibold">Monthly workflow allowance</td>
+                <td className="py-3 px-4">10 credits / month</td>
+                <td className="py-3 px-4 font-bold text-stone-900">250 credits / month</td>
+              </tr>
+              <tr>
+                <td className="py-3 pr-4 font-semibold">Priority support</td>
+                <td className="py-3 px-4 text-stone-500">Standard support</td>
+                <td className="py-3 px-4 text-emerald-600 font-semibold">Included</td>
               </tr>
             </tbody>
           </table>
