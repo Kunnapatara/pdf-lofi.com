@@ -6,12 +6,14 @@
 import crypto from 'crypto';
 import { SaaSDatabase } from '../storage/db';
 import { getSessionSecret } from './session';
+import { EmailProvider, getEmailProvider } from './emailProvider';
 
 export interface OtpGenerationResult {
   success: boolean;
   expiresAt: number;
   message: string;
   devCode?: string; // Only populated in non-production
+  error?: string;
 }
 
 export interface OtpVerificationResult {
@@ -22,21 +24,33 @@ export interface OtpVerificationResult {
 
 export class AccountOwnershipManager {
   private db: SaaSDatabase;
+  private emailProvider?: EmailProvider;
 
-  constructor(db: SaaSDatabase) {
+  constructor(db: SaaSDatabase, emailProvider?: EmailProvider) {
     this.db = db;
+    this.emailProvider = emailProvider;
+  }
+
+  setEmailProvider(provider: EmailProvider): void {
+    this.emailProvider = provider;
   }
 
   /**
-   * Generates and stores a short-lived (10 min) single-use OTP for email ownership verification.
-   * Throttles requests to max 3 requests per 15 minutes per email.
+   * Generates, stores, and dispatches a short-lived (10 min) single-use OTP for email ownership verification.
+   * Throttles requests to max 5 requests per 15 minutes per email.
+   * Real email delivery abstraction is used in production.
+   * If delivery fails, the OTP challenge is deleted immediately so it cannot be used.
    */
-  requestOtp(email: string, purpose: 'login' | 'email_change' = 'login'): OtpGenerationResult {
+  async requestOtp(
+    email: string,
+    purpose: 'login' | 'email_change' = 'login',
+    customProvider?: EmailProvider
+  ): Promise<OtpGenerationResult> {
     const cleanEmail = email.trim().toLowerCase();
     const now = Date.now();
     const fifteenMinsAgo = now - 15 * 60 * 1000;
 
-    // Rate-limiting check: max 3 requests per 15 minutes
+    // Rate-limiting check: max 5 requests per 15 minutes
     const recentRequestsRow = this.db.db
       .prepare(
         'SELECT count(*) as count FROM auth_verification_codes WHERE email = ? AND created_at > ?'
@@ -47,6 +61,7 @@ export class AccountOwnershipManager {
       return {
         success: false,
         expiresAt: 0,
+        error: 'RATE_LIMITED',
         message: 'Too many verification requests. Please wait a few minutes before trying again.',
       };
     }
@@ -72,12 +87,34 @@ export class AccountOwnershipManager {
       )
       .run(codeId, cleanEmail, codeHash, purpose, expiresAt, 0, 5, now);
 
-    // Logging for server operators (never logs to client in production)
+    // Real transactional email delivery
+    const provider = customProvider || this.emailProvider || getEmailProvider();
+    const delivery = await provider.sendOtp({
+      to: cleanEmail,
+      code,
+      expiresInMinutes: 10,
+      purpose,
+    });
+
     const isProd = process.env.NODE_ENV === 'production';
+
+    if (!delivery.success) {
+      // Invalidate undelivered challenge so it cannot accidentally become usable
+      this.db.db.prepare('DELETE FROM auth_verification_codes WHERE id = ?').run(codeId);
+      console.warn(`[Auth Verification] Delivery failed to ${cleanEmail}: ${delivery.error}`);
+      return {
+        success: false,
+        expiresAt: 0,
+        error: 'DELIVERY_FAILED',
+        message: 'Failed to deliver verification code. Please check the email address and try again.',
+      };
+    }
+
+    // Logging: NEVER log plaintext OTP in production
     if (!isProd) {
       console.log(`[Auth Verification] Generated code for ${cleanEmail} (${purpose}): ${code}`);
     } else {
-      console.log(`[Auth Verification] Dispatched verification challenge to ${cleanEmail} (${purpose})`);
+      console.log(`[Auth Verification] Verification challenge delivered via [${provider.name}] to ${cleanEmail} (${purpose})`);
     }
 
     return {

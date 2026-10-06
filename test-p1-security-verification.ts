@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import { SaaSDatabase } from './src/server/storage/db';
 import { saasStore, SaaSStore, PLANS } from './src/server/storage/saasStore';
 import { AccountOwnershipManager } from './src/server/auth/otp';
+import { TestEmailProvider } from './src/server/auth/emailProvider';
 import {
   createSignedSessionToken,
   verifySignedSessionToken,
@@ -63,13 +64,16 @@ async function runSecurityTestSuite() {
   const store = saasStore;
   const ownershipManager = store.getOwnershipManager();
 
+  const testEmailProvider = new TestEmailProvider();
+  ownershipManager.setEmailProvider(testEmailProvider);
+
   // --------------------------------------------------------------------------
   // SECTION 1: ACCOUNT OWNERSHIP & AUTHENTICATION
   // --------------------------------------------------------------------------
   console.log('--- SECTION 1: Account Ownership & Authentication ---');
 
-  // Test 1.1: OTP Generation & Dispatch
-  const otpRes = ownershipManager.requestOtp('alice@test.com', 'login');
+  // Test 1.1: OTP Generation & Real Provider Dispatch
+  const otpRes = await ownershipManager.requestOtp('alice@test.com', 'login');
   assert(
     otpRes.success && typeof otpRes.expiresAt === 'number' && Boolean(otpRes.devCode),
     'Auth: OTP Generation',
@@ -112,7 +116,7 @@ async function runSecurityTestSuite() {
 
   // Test 1.6: Expired OTP rejected
   const expiredEmail = 'bob_expired@test.com';
-  const expRes = ownershipManager.requestOtp(expiredEmail, 'login');
+  const expRes = await ownershipManager.requestOtp(expiredEmail, 'login');
   // Manually update expiration to past in database
   testDb.db
     .prepare('UPDATE auth_verification_codes SET expires_at = ? WHERE email = ?')
@@ -147,6 +151,44 @@ async function runSecurityTestSuite() {
     'Auth: Tampered Session Rejected',
     'Tampered session token signature rejected via constant-time verification.'
   );
+
+  // Test 1.8: Real Email Provider Invocation
+  assert(
+    testEmailProvider.sentMessages.length > 0 &&
+      testEmailProvider.sentMessages.some((m) => m.to === 'alice@test.com'),
+    'Auth: Real Email Provider Invocation',
+    'Transactional email provider abstraction was actively invoked with correct parameters.'
+  );
+
+  // Test 1.9: Production Path Conceals OTP
+  const originalEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  const prodOtpRes = await ownershipManager.requestOtp('prod_user@test.com', 'login');
+  assert(
+    prodOtpRes.success && prodOtpRes.devCode === undefined,
+    'Auth: Production Path Conceals OTP',
+    'Production OTP dispatch response strictly does not expose devCode or plaintext code.'
+  );
+  process.env.NODE_ENV = originalEnv;
+
+  // Test 1.10: Provider Failure Reports Honestly and Invalidates Challenge
+  testEmailProvider.shouldFail = true;
+  testEmailProvider.failureReason = 'SMTP connection timeout';
+  const failedOtpRes = await ownershipManager.requestOtp('fail_test@test.com', 'login');
+  assert(
+    !failedOtpRes.success && failedOtpRes.error === 'DELIVERY_FAILED',
+    'Auth: Email Delivery Failure Honest Reporting',
+    'Provider failure returns DELIVERY_FAILED and refuses to claim successful delivery.'
+  );
+
+  // Assert undelivered challenge was purged from DB and cannot be used
+  const undeliveredVerify = ownershipManager.verifyOtp('fail_test@test.com', '123456', 'login');
+  assert(
+    !undeliveredVerify.valid && undeliveredVerify.error === 'INVALID_OR_EXPIRED_CODE',
+    'Auth: Undelivered OTP Invalidation',
+    'Failed delivery purges the challenge from database to prevent unauthorized use.'
+  );
+  testEmailProvider.shouldFail = false;
 
   // --------------------------------------------------------------------------
   // SECTION 2: DURABLE PERSISTENCE & DATABASE INTEGRITY
@@ -361,6 +403,22 @@ async function runSecurityTestSuite() {
     'Usage operation exceeding credit balance rejected with 402 error message.'
   );
 
+  // Test 4.6: Unknown operations fail closed
+  const unknownOpRes = store.recordUsage(usageUser.id, 'unregistered_hack_operation', 'Fake operation');
+  assert(
+    !unknownOpRes.allowed && Boolean(unknownOpRes.error),
+    'Usage: Unknown Operation Rejected',
+    'Unregistered operation types fail closed without deducting credits.'
+  );
+
+  // Test 4.7: Caller cost override ignored in favor of canonical registry
+  const overrideAttempt = store.recordUsage(usageUser.id, 'rotate_pages', 'Manipulated cost attempt', 99);
+  assert(
+    overrideAttempt.allowed && overrideAttempt.usage.creditsUsed === 10,
+    'Usage: Caller Cost Override Ignored',
+    'Storage layer strictly enforces canonical registry pricing (rotate=0 credits) and ignores caller override.'
+  );
+
   // --------------------------------------------------------------------------
   // SECTION 5: LEMON SQUEEZY HARDENING
   // --------------------------------------------------------------------------
@@ -467,6 +525,92 @@ async function runSecurityTestSuite() {
     staleRes.status === 'ignored',
     'LemonSqueezy: Stale Out-of-Order Event Ignored',
     'Event with older provider timestamp safely ignored.'
+  );
+
+  // Test 5.7: Pro Credit Quota Durability across Database Reload (Mandatory R2 & R4 check)
+  const proUsageImmediate = store.getUsage(usageUser.id);
+  assert(
+    proUsageImmediate.creditsTotal === PLANS.pro.entitlements.monthlyCredits && proUsageImmediate.creditsRemaining >= 190,
+    'Credits: Pro Quota Assigned',
+    `Verified webhook grants canonical Pro quota (${PLANS.pro.entitlements.monthlyCredits} credits).`
+  );
+
+  // Close / reload database instance from disk to simulate process restart
+  const reloadDb = new SaaSDatabase(testDbPath);
+  const reloadStore = new SaaSStore(reloadDb);
+  const reloadedUsage = reloadStore.getUsage(usageUser.id);
+  assert(
+    reloadedUsage.creditsTotal === PLANS.pro.entitlements.monthlyCredits && reloadedUsage.creditsRemaining === proUsageImmediate.creditsRemaining,
+    'Credits: Pro Quota Survives Database Reload',
+    `Pro creditsTotal (${PLANS.pro.entitlements.monthlyCredits}) and creditsRemaining are durably written to SQLite and survive DB reload.`
+  );
+
+  // Test 5.8: Complete Lifecycle: Cancellation, Expiry, and Re-subscription
+  // A. Cancellation with future ends_at retains Pro access
+  const cancelPayload = {
+    meta: { event_name: 'subscription_updated' },
+    data: {
+      id: validProSub.lemonSqueezySubscriptionId,
+      attributes: {
+        store_id: 'store_test_123',
+        variant_id: 'variant_pro_prod_456',
+        status: 'cancelled',
+        cancelled: true,
+        ends_at: new Date(Date.now() + 86400000).toISOString(),
+        updated_at: new Date(Date.now() + 1000).toISOString(),
+      },
+    },
+  };
+  await processLemonSqueezyWebhook(cancelPayload, `evt_cancel_${Date.now()}`);
+  const cancelEntitlements = store.getEntitlements(usageUser.id);
+  assert(
+    cancelEntitlements.maxFileSizeMB === 500 && cancelEntitlements.batchMergeLimit === 50,
+    'Lifecycle: Cancelled In-Period Retains Pro Entitlements',
+    'Subscription cancelled with future ends_at retains Pro entitlements until period end.'
+  );
+
+  // B. Expiry degrades to Free
+  const expiredPayload = {
+    meta: { event_name: 'subscription_expired' },
+    data: {
+      id: validProSub.lemonSqueezySubscriptionId,
+      attributes: {
+        store_id: 'store_test_123',
+        variant_id: 'variant_pro_prod_456',
+        status: 'expired',
+        ends_at: new Date(Date.now() - 1000).toISOString(),
+        updated_at: new Date(Date.now() + 2000).toISOString(),
+      },
+    },
+  };
+  await processLemonSqueezyWebhook(expiredPayload, `evt_exp_${Date.now()}`);
+  const expiredEntitlements = store.getEntitlements(usageUser.id);
+  assert(
+    expiredEntitlements.maxFileSizeMB === 25 && expiredEntitlements.batchMergeLimit === 5,
+    'Lifecycle: Expired Subscription Degrades to Free',
+    'Expired subscription immediately degrades application entitlements to Free tier.'
+  );
+
+  // C. Re-subscription restores Pro and persists credit quota
+  const resubPayload = {
+    meta: { event_name: 'subscription_created', custom_data: { user_id: usageUser.id } },
+    data: {
+      id: `sub_resub_pro_${Date.now()}`,
+      attributes: {
+        store_id: 'store_test_123',
+        variant_id: 'variant_pro_prod_456',
+        status: 'active',
+        updated_at: new Date(Date.now() + 3000).toISOString(),
+      },
+    },
+  };
+  const resubRes = await processLemonSqueezyWebhook(resubPayload, `evt_resub_${Date.now()}`);
+  const resubSub = store.getSubscription(usageUser.id);
+  const resubUsage = store.getUsage(usageUser.id);
+  assert(
+    resubRes.status === 'processed' && resubSub.planId === 'pro' && resubUsage.creditsTotal === PLANS.pro.entitlements.monthlyCredits,
+    'Lifecycle: Re-subscription Restores Pro and Quota',
+    'New active subscription restores Pro plan and persists updated monthly credit allowance.'
   );
 
   // --------------------------------------------------------------------------

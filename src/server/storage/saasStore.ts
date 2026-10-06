@@ -147,7 +147,15 @@ export class SaaSStore {
     };
   }
 
+  /**
+   * @deprecated Strictly test-only fallback.
+   * Prohibited in production mode.
+   */
   getDefaultUser(): SaaSUser {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('getDefaultUser is strictly prohibited in production mode.');
+    }
+
     const firstRow = this.dbInstance.db
       .prepare('SELECT id, email, name, created_at FROM users ORDER BY created_at ASC LIMIT 1')
       .get() as { id: string; email: string; name: string; created_at: number } | undefined;
@@ -447,6 +455,18 @@ export class SaaSStore {
            FROM usage WHERE user_id = ? AND period = ?`
         )
         .get(userId, period) as any;
+    } else if (row.credits_total < plan.entitlements.monthlyCredits) {
+      // Auto-reconcile upgrade: persist increased credit quota to database
+      const added = plan.entitlements.monthlyCredits - row.credits_total;
+      const newTotal = plan.entitlements.monthlyCredits;
+      const newRemaining = row.credits_remaining + added;
+      this.dbInstance.db
+        .prepare(
+          `UPDATE usage SET credits_total = ?, credits_remaining = ? WHERE user_id = ? AND period = ?`
+        )
+        .run(newTotal, newRemaining, userId, period);
+      row.credits_total = newTotal;
+      row.credits_remaining = newRemaining;
     }
 
     const eventRows = this.dbInstance.db
@@ -478,9 +498,55 @@ export class SaaSStore {
   }
 
   /**
+   * Durably writes plan credit quota to SQLite.
+   * Guarantees that Pro upgrade / re-subscription credits survive database restart.
+   */
+  syncPlanCredits(userId: string, planId: PlanId): UserUsage {
+    const period = new Date().toISOString().slice(0, 7);
+    const plan = PLANS[planId] || PLANS.free;
+    const targetCredits = plan.entitlements.monthlyCredits;
+
+    const row = this.dbInstance.db
+      .prepare(
+        `SELECT user_id, period, credits_total, credits_used, credits_remaining, operations_count
+         FROM usage WHERE user_id = ? AND period = ?`
+      )
+      .get(userId, period) as any;
+
+    if (!row) {
+      this.dbInstance.db
+        .prepare(
+          `INSERT INTO usage (user_id, period, credits_total, credits_used, credits_remaining, operations_count)
+           VALUES (?, ?, ?, 0, ?, 0)
+           ON CONFLICT(user_id, period) DO UPDATE SET
+             credits_total = excluded.credits_total,
+             credits_remaining = excluded.credits_remaining`
+        )
+        .run(userId, period, targetCredits, targetCredits);
+    } else {
+      let newTotal = targetCredits;
+      let newRemaining = row.credits_remaining;
+      if (targetCredits > row.credits_total) {
+        const diff = targetCredits - row.credits_total;
+        newRemaining += diff;
+      } else if (targetCredits < row.credits_total) {
+        newRemaining = Math.max(0, targetCredits - row.credits_used);
+      }
+      this.dbInstance.db
+        .prepare(
+          `UPDATE usage SET credits_total = ?, credits_remaining = ? WHERE user_id = ? AND period = ?`
+        )
+        .run(newTotal, newRemaining, userId, period);
+    }
+
+    return this.getUsage(userId);
+  }
+
+  /**
    * Authoritative server-side usage recording.
    * - Strict ACID transaction preventing concurrency race conditions
-   * - Checks canonical operation cost; rejects unknown/arbitrary costs
+   * - Strictly enforces canonical operation costs from registry; rejects unknown/arbitrary operations
+   * - Ignores caller-supplied credit overrides to prevent client-side manipulation
    * - Checks idempotency key to prevent duplicate deduction on retries
    * - Rejects when balance is insufficient (fail-closed)
    */
@@ -488,20 +554,26 @@ export class SaaSStore {
     userId: string,
     operationType: string,
     description: string,
-    creditsCost?: number,
+    _callerCostOverride?: number,
     idempotencyKey?: string
   ): { allowed: boolean; usage: UserUsage; error?: string; alreadyProcessed?: boolean } {
-    // 1. Authoritative canonical cost determination
+    // 1. Authoritative canonical cost determination: only registered operations are permitted
     const canonical = getCanonicalOperation(operationType);
-    let resolvedCost: number;
+    if (!canonical) {
+      return {
+        allowed: false,
+        usage: this.getUsage(userId),
+        error: `Operation '${operationType}' is not recognized in the authoritative canonical operations registry.`,
+      };
+    }
 
-    if (canonical) {
-      resolvedCost = canonical.cost;
-    } else if (typeof creditsCost === 'number' && !isNaN(creditsCost) && creditsCost >= 0) {
-      // Fallback for custom operations only if valid non-negative number
-      resolvedCost = creditsCost;
-    } else {
-      resolvedCost = 1;
+    const resolvedCost = canonical.cost;
+    if (typeof resolvedCost !== 'number' || isNaN(resolvedCost) || resolvedCost < 0) {
+      return {
+        allowed: false,
+        usage: this.getUsage(userId),
+        error: `Invalid cost configuration for operation '${operationType}'.`,
+      };
     }
 
     const period = new Date().toISOString().slice(0, 7);

@@ -9,11 +9,11 @@ import fs from 'fs';
 import { SaaSUser, UserSubscription, UserUsage, PlanDefinition } from '../../types/saas';
 
 const dataDir = path.join(process.cwd(), 'data');
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+const DB_PATH = process.env.SQLITE_DB_PATH || path.join(dataDir, 'saas.db');
+const dbDir = path.dirname(DB_PATH);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
 }
-
-const DB_PATH = path.join(dataDir, 'saas.db');
 
 export class SaaSDatabase {
   public db: DatabaseSync;

@@ -365,14 +365,9 @@ export async function processLemonSqueezyWebhook(
           saasStore.recordProviderSubscriptionTimestamp(providerSubId, providerTimestamp);
         }
 
-        // Adjust usage quotas if upgraded to pro
+        // Durably adjust and persist usage quotas in SQLite if upgraded to pro
         if (updatedSub.planId === 'pro') {
-          const usage = saasStore.getUsage(targetUserId);
-          if (usage.creditsTotal < PLANS.pro.entitlements.monthlyCredits) {
-            const addedCredits = PLANS.pro.entitlements.monthlyCredits - usage.creditsTotal;
-            usage.creditsTotal = PLANS.pro.entitlements.monthlyCredits;
-            usage.creditsRemaining += addedCredits;
-          }
+          saasStore.syncPlanCredits(targetUserId, 'pro');
         }
 
         saasStore.recordWebhookProcessed(eventId, eventName, 'processed');

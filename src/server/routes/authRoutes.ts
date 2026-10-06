@@ -62,7 +62,7 @@ authRouter.get('/me', (req: AuthenticatedRequest, res) => {
  * Dispatches a short-lived 6-digit OTP to the requested email.
  * Rate-limited and fails safely without leaking account existence.
  */
-function handleOtpRequest(req: any, res: any) {
+async function handleOtpRequest(req: any, res: any) {
   const { email, purpose = 'login' } = req.body || {};
 
   if (!email || typeof email !== 'string' || !email.includes('@')) {
@@ -76,11 +76,12 @@ function handleOtpRequest(req: any, res: any) {
   const validPurpose = purpose === 'email_change' ? 'email_change' : 'login';
 
   const ownershipManager = saasStore.getOwnershipManager();
-  const result = ownershipManager.requestOtp(cleanEmail, validPurpose);
+  const result = await ownershipManager.requestOtp(cleanEmail, validPurpose);
 
   if (!result.success) {
-    return res.status(429).json({
-      error: 'RATE_LIMITED',
+    const status = result.error === 'RATE_LIMITED' ? 429 : 503;
+    return res.status(status).json({
+      error: result.error || 'DELIVERY_FAILED',
       message: result.message,
     });
   }
